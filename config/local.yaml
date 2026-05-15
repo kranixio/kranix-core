@@ -1,0 +1,15 @@
+core:
+  reconcile_interval: 15s
+  max_concurrent_reconciles: 10
+
+state:
+  backend: memory          # memory | postgres | etcd
+  postgres_dsn: ""
+
+policy:
+  default_cpu_limit: "500m"
+  default_memory_limit: "512Mi"
+  enforce_namespace_isolation: true
+
+eventbus:
+  buffer_size: 1024
