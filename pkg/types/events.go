@@ -16,14 +16,22 @@ const (
 	WorkloadUpdated EventType = "WorkloadUpdated"
 	// WorkloadDeleted is emitted when a workload is deleted
 	WorkloadDeleted EventType = "WorkloadDeleted"
+	// WorkloadScaled is emitted when auto-scaling changes replica count
+	WorkloadScaled EventType = "WorkloadScaled"
+	// WorkloadRolloutStarted is emitted when a rollout strategy begins
+	WorkloadRolloutStarted EventType = "WorkloadRolloutStarted"
+	// WorkloadRolloutCompleted is emitted when a rollout strategy completes
+	WorkloadRolloutCompleted EventType = "WorkloadRolloutCompleted"
+	// WorkloadRolloutFailed is emitted when a rollout strategy fails
+	WorkloadRolloutFailed EventType = "WorkloadRolloutFailed"
 )
 
 // Event represents an internal event in the system.
 type Event struct {
-	Type      EventType       `json:"type"`
-	Workload  *Workload       `json:"workload,omitempty"`
-	Timestamp int64           `json:"timestamp"`
-	Metadata  map[string]any  `json:"metadata,omitempty"`
+	Type      EventType      `json:"type"`
+	Workload  *Workload      `json:"workload,omitempty"`
+	Timestamp int64          `json:"timestamp"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
 // RuntimeDriver defines the interface for runtime backends.

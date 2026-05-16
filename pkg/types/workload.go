@@ -26,12 +26,14 @@ type Workload struct {
 
 // WorkloadSpec defines the desired configuration of a workload.
 type WorkloadSpec struct {
-	Image           string            `json:"image"`
-	Replicas        int32             `json:"replicas"`
-	Env             map[string]string `json:"env,omitempty"`
+	Image           string               `json:"image"`
+	Replicas        int32                `json:"replicas"`
+	Env             map[string]string    `json:"env,omitempty"`
 	Resources       ResourceRequirements `json:"resources,omitempty"`
-	Backend         string            `json:"backend"` // docker, kubernetes, etc.
-	RolloutStrategy RolloutStrategy   `json:"rollout_strategy,omitempty"`
+	Backend         string               `json:"backend"` // docker, kubernetes, etc.
+	RolloutStrategy RolloutStrategy      `json:"rollout_strategy,omitempty"`
+	AutoScaling     *AutoScalingConfig   `json:"auto_scaling,omitempty"`
+	Scheduling      *SchedulingConfig    `json:"scheduling,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -44,19 +46,21 @@ type ResourceRequirements struct {
 
 // RolloutStrategy defines how the workload should be deployed.
 type RolloutStrategy struct {
-	Type          string `json:"type"` // rolling, recreate, bluegreen
-	MaxUnavailable int32  `json:"max_unavailable,omitempty"`
-	MaxSurge      int32  `json:"max_surge,omitempty"`
+	Type           string        `json:"type"` // rolling, recreate, bluegreen, canary, abtest
+	MaxUnavailable int32         `json:"max_unavailable,omitempty"`
+	MaxSurge       int32         `json:"max_surge,omitempty"`
+	CanaryConfig   *CanaryConfig `json:"canary_config,omitempty"`
+	ABTestConfig   *ABTestConfig `json:"ab_test_config,omitempty"`
 }
 
 // WorkloadStatus represents the current observed state of a workload.
 type WorkloadStatus struct {
-	Phase           WorkloadPhase `json:"phase"`
-	Replicas        int32         `json:"replicas"`
-	AvailableReplicas int32       `json:"available_replicas"`
-	ReadyReplicas   int32         `json:"ready_replicas"`
-	Message         string        `json:"message,omitempty"`
-	LastTransition  time.Time     `json:"last_transition"`
+	Phase             WorkloadPhase `json:"phase"`
+	Replicas          int32         `json:"replicas"`
+	AvailableReplicas int32         `json:"available_replicas"`
+	ReadyReplicas     int32         `json:"ready_replicas"`
+	Message           string        `json:"message,omitempty"`
+	LastTransition    time.Time     `json:"last_transition"`
 }
 
 // WorkloadPhase represents the lifecycle phase of a workload.
@@ -72,9 +76,127 @@ const (
 
 // WorkloadStateTransition records a state change in the workload's history.
 type WorkloadStateTransition struct {
-	FromPhase  WorkloadPhase `json:"from_phase"`
-	ToPhase    WorkloadPhase `json:"to_phase"`
-	Timestamp  time.Time     `json:"timestamp"`
-	Reason     string        `json:"reason"`
-	Message    string        `json:"message,omitempty"`
+	FromPhase WorkloadPhase `json:"from_phase"`
+	ToPhase   WorkloadPhase `json:"to_phase"`
+	Timestamp time.Time     `json:"timestamp"`
+	Reason    string        `json:"reason"`
+	Message   string        `json:"message,omitempty"`
+}
+
+// AutoScalingConfig defines auto-scaling behavior.
+type AutoScalingConfig struct {
+	Enabled                  bool           `json:"enabled"`
+	MinReplicas              int32          `json:"min_replicas"`
+	MaxReplicas              int32          `json:"max_replicas"`
+	TargetCPUUtilization     int32          `json:"target_cpu_utilization,omitempty"`    // percentage
+	TargetMemoryUtilization  int32          `json:"target_memory_utilization,omitempty"` // percentage
+	CustomMetrics            []CustomMetric `json:"custom_metrics,omitempty"`
+	ScaleDownCooldownSeconds int32          `json:"scale_down_cooldown_seconds,omitempty"`
+	ScaleUpCooldownSeconds   int32          `json:"scale_up_cooldown_seconds,omitempty"`
+}
+
+// CustomMetric defines a custom metric for auto-scaling.
+type CustomMetric struct {
+	Name       string       `json:"name"`
+	Type       string       `json:"type"` // pods, object
+	MetricName string       `json:"metric_name"`
+	Target     MetricTarget `json:"target"`
+}
+
+// MetricTarget defines the target value for a metric.
+type MetricTarget struct {
+	Type         string `json:"type"` // average, value
+	AverageValue string `json:"average_value,omitempty"`
+	Value        string `json:"value,omitempty"`
+}
+
+// SchedulingConfig defines scheduling preferences.
+type SchedulingConfig struct {
+	CostAware        bool              `json:"cost_aware,omitempty"`
+	PreferredRegions []string          `json:"preferred_regions,omitempty"`
+	PreferredZones   []string          `json:"preferred_zones,omitempty"`
+	NodeSelectors    map[string]string `json:"node_selectors,omitempty"`
+	Affinity         *AffinityConfig   `json:"affinity,omitempty"`
+	Tolerations      []Toleration      `json:"tolerations,omitempty"`
+	MaxCostPerHour   string            `json:"max_cost_per_hour,omitempty"`
+}
+
+// AffinityConfig defines pod affinity/anti-affinity rules.
+type AffinityConfig struct {
+	NodeAffinity    *NodeAffinity `json:"node_affinity,omitempty"`
+	PodAffinity     *PodAffinity  `json:"pod_affinity,omitempty"`
+	PodAntiAffinity *PodAffinity  `json:"pod_anti_affinity,omitempty"`
+}
+
+// NodeAffinity defines node affinity rules.
+type NodeAffinity struct {
+	RequiredDuringScheduling  []NodeSelectorTerm        `json:"required_during_scheduling,omitempty"`
+	PreferredDuringScheduling []PreferredSchedulingTerm `json:"preferred_during_scheduling,omitempty"`
+}
+
+// NodeSelectorTerm defines a node selector term.
+type NodeSelectorTerm struct {
+	MatchExpressions []NodeSelectorRequirement `json:"match_expressions,omitempty"`
+	MatchFields      []NodeSelectorRequirement `json:"match_fields,omitempty"`
+}
+
+// NodeSelectorRequirement defines a node selector requirement.
+type NodeSelectorRequirement struct {
+	Key      string   `json:"key"`
+	Operator string   `json:"operator"` // In, NotIn, Exists, DoesNotExist, Gt, Lt
+	Values   []string `json:"values,omitempty"`
+}
+
+// PreferredSchedulingTerm defines a preferred scheduling term.
+type PreferredSchedulingTerm struct {
+	Weight     int32            `json:"weight"`
+	Preference NodeSelectorTerm `json:"preference"`
+}
+
+// PodAffinity defines pod affinity rules.
+type PodAffinity struct {
+	RequiredDuringScheduling  []PodAffinityTerm         `json:"required_during_scheduling,omitempty"`
+	PreferredDuringScheduling []WeightedPodAffinityTerm `json:"preferred_during_scheduling,omitempty"`
+}
+
+// PodAffinityTerm defines a pod affinity term.
+type PodAffinityTerm struct {
+	LabelSelector map[string]string `json:"label_selector,omitempty"`
+	Namespaces    []string          `json:"namespaces,omitempty"`
+	TopologyKey   string            `json:"topology_key"`
+}
+
+// WeightedPodAffinityTerm defines a weighted pod affinity term.
+type WeightedPodAffinityTerm struct {
+	Weight          int32           `json:"weight"`
+	PodAffinityTerm PodAffinityTerm `json:"pod_affinity_term"`
+}
+
+// Toleration defines a toleration for taints.
+type Toleration struct {
+	Key               string `json:"key,omitempty"`
+	Operator          string `json:"operator,omitempty"` // Exists, Equal
+	Value             string `json:"value,omitempty"`
+	Effect            string `json:"effect,omitempty"` // NoSchedule, PreferNoSchedule, NoExecute
+	TolerationSeconds *int64 `json:"toleration_seconds,omitempty"`
+}
+
+// CanaryConfig defines canary deployment configuration.
+type CanaryConfig struct {
+	Replicas         int32    `json:"replicas"`
+	Percentage       int32    `json:"percentage,omitempty"`
+	AnalysisDuration string   `json:"analysis_duration,omitempty"`
+	SuccessThreshold int32    `json:"success_threshold,omitempty"`
+	Metrics          []string `json:"metrics,omitempty"`
+	AutoPromote      bool     `json:"auto_promote,omitempty"`
+}
+
+// ABTestConfig defines A/B testing configuration.
+type ABTestConfig struct {
+	VariantA         string   `json:"variant_a"`
+	VariantB         string   `json:"variant_b"`
+	TrafficSplit     int32    `json:"traffic_split"` // percentage for variant B
+	AnalysisDuration string   `json:"analysis_duration,omitempty"`
+	Metrics          []string `json:"metrics,omitempty"`
+	AutoSelectWinner bool     `json:"auto_select_winner,omitempty"`
 }

@@ -15,11 +15,8 @@
 - Enforces infra policies (resource limits, namespace isolation, rollout rules)
 - Provides the plugin interface for extending Kranix with custom controllers
 
----
-
+-
 ## Architecture position
-
-```
 kranix-api  ──►  kranix-core  ──►  kranix-runtime
                     │
                     ├──►  kranix-operator
@@ -79,8 +76,6 @@ kranix-core/
 ├── internal/
 │   ├── reconciler/       # Main reconciliation loop
 │   ├── scheduler/        # Workload placement logic
-│   ├── state/            # State store interface + implementations
-│   ├── eventbus/         # Typed internal event system
 │   ├── policy/           # Policy engine (limits, rules)
 │   └── plugin/           # Plugin/controller extension interface
 ├── pkg/
@@ -139,6 +134,14 @@ policy:
 
 eventbus:
   buffer_size: 1024
+
+autoscaler:
+  check_interval: 30s
+  metrics_provider: "prometheus"  # prometheus, custom
+
+scheduler:
+  cost_provider: "aws"           # aws, gcp, azure, custom
+  node_registry: "kubernetes"    # kubernetes, custom
 ```
 
 ---
@@ -153,6 +156,84 @@ type Controller interface {
     Reconcile(ctx context.Context, workload *types.Workload) error
     ShouldHandle(workload *types.Workload) bool
 }
+```
+
+---
+
+## New Features
+
+### Smart Auto-scaling
+
+The auto-scaler automatically adjusts replica counts based on CPU, memory, and custom metrics:
+
+```yaml
+auto_scaling:
+  enabled: true
+  min_replicas: 2
+  max_replicas: 10
+  target_cpu_utilization: 70        # Scale up when CPU > 70%
+  target_memory_utilization: 80     # Scale up when memory > 80%
+  custom_metrics:
+    - name: requests_per_second
+      type: pods
+      metric_name: http_requests_total
+      target:
+        type: average
+        average_value: "1000"
+  scale_down_cooldown_seconds: 300
+  scale_up_cooldown_seconds: 60
+```
+
+### Cost-aware Scheduling
+
+Route workloads to the cheapest available nodes/regions:
+
+```yaml
+scheduling:
+  cost_aware: true
+  preferred_regions:
+    - us-east-1
+    - us-west-2
+  preferred_zones:
+    - us-east-1a
+  node_selectors:
+    node.kubernetes.io/instance-type: "t3.medium"
+  max_cost_per_hour: "0.50"
+```
+
+### Advanced Rollout Strategies
+
+Deploy workloads using canary, blue-green, or A/B testing strategies:
+
+```yaml
+rollout_strategy:
+  type: canary              # rolling, recreate, bluegreen, canary, abtest
+  max_unavailable: 1
+  canary_config:
+    replicas: 2
+    percentage: 10
+    analysis_duration: "10m"
+    success_threshold: 99
+    metrics:
+      - error_rate
+      - latency_p99
+    auto_promote: true
+```
+
+For A/B testing:
+
+```yaml
+rollout_strategy:
+  type: abtest
+  ab_test_config:
+    variant_a: "myapp:v1.0"
+    variant_b: "myapp:v2.0"
+    traffic_split: 20           # 20% to variant B
+    analysis_duration: "30m"
+    metrics:
+      - conversion_rate
+      - user_engagement
+    auto_select_winner: true
 
 // Register in cmd/core/main.go
 engine.RegisterController(&MyCustomController{})

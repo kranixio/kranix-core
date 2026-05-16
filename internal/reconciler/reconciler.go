@@ -5,8 +5,10 @@ import (
 	"log"
 	"time"
 
+	"github.com/kranix-io/kranix-core/internal/autoscaler"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
 	"github.com/kranix-io/kranix-core/internal/plugin"
+	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/pkg/types"
@@ -14,7 +16,7 @@ import (
 
 // Config defines reconciler configuration.
 type Config struct {
-	ReconcileInterval      time.Duration
+	ReconcileInterval       time.Duration
 	MaxConcurrentReconciles int
 }
 
@@ -25,18 +27,22 @@ type Engine struct {
 	eventBus       *eventbus.EventBus
 	scheduler      *scheduler.Scheduler
 	controllerReg  *plugin.Registry
+	rolloutManager *rollout.Manager
+	autoscaler     *autoscaler.Engine
 	stopCh         chan struct{}
 }
 
 // New creates a new reconciliation engine.
-func New(config Config, store state.Store, eventBus *eventbus.EventBus, scheduler *scheduler.Scheduler, controllerReg *plugin.Registry) *Engine {
+func New(config Config, store state.Store, eventBus *eventbus.EventBus, scheduler *scheduler.Scheduler, controllerReg *plugin.Registry, rolloutManager *rollout.Manager, autoscaler *autoscaler.Engine) *Engine {
 	return &Engine{
-		config:        config,
-		store:         store,
-		eventBus:      eventBus,
-		scheduler:     scheduler,
-		controllerReg: controllerReg,
-		stopCh:        make(chan struct{}),
+		config:         config,
+		store:          store,
+		eventBus:       eventBus,
+		scheduler:      scheduler,
+		controllerReg:  controllerReg,
+		rolloutManager: rolloutManager,
+		autoscaler:     autoscaler,
+		stopCh:         make(chan struct{}),
 	}
 }
 
@@ -44,6 +50,11 @@ func New(config Config, store state.Store, eventBus *eventbus.EventBus, schedule
 func (e *Engine) Start(ctx context.Context) {
 	ticker := time.NewTicker(e.config.ReconcileInterval)
 	defer ticker.Stop()
+
+	// Start the auto-scaler engine
+	if e.autoscaler != nil {
+		go e.autoscaler.Start(ctx)
+	}
 
 	log.Println("Reconciliation engine started")
 
@@ -93,8 +104,27 @@ func (e *Engine) reconcileOne(ctx context.Context, workload *types.Workload) err
 		}
 	}
 
-	// Schedule the workload if needed
-	if workload.Status.Phase == types.WorkloadPhasePending {
+	// Execute rollout strategy if needed
+	if workload.Status.Phase == types.WorkloadPhasePending && e.rolloutManager != nil {
+		if err := e.rolloutManager.ExecuteRollout(ctx, workload); err != nil {
+			log.Printf("Rollout failed for workload %s: %v", workload.ID, err)
+			return err
+		}
+
+		// Update status to running after successful rollout
+		workload.Status.Phase = types.WorkloadPhaseRunning
+		workload.Status.LastTransition = time.Now()
+		if err := e.store.Update(ctx, workload); err != nil {
+			return err
+		}
+
+		// Publish event
+		e.eventBus.PublishAsync(types.Event{
+			Type:     types.WorkloadScheduled,
+			Workload: workload,
+		})
+	} else if workload.Status.Phase == types.WorkloadPhasePending {
+		// Fallback to direct scheduling if no rollout manager
 		if err := e.scheduler.Schedule(ctx, workload); err != nil {
 			return err
 		}
