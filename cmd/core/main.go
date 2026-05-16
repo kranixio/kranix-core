@@ -29,9 +29,9 @@ type Config struct {
 		PostgresDSN string `yaml:"postgres_dsn"`
 	} `yaml:"state"`
 	Policy struct {
-		DefaultCPULimit            string `yaml:"default_cpu_limit"`
-		DefaultMemoryLimit         string `yaml:"default_memory_limit"`
-		EnforceNamespaceIsolation  bool   `yaml:"enforce_namespace_isolation"`
+		DefaultCPULimit           string `yaml:"default_cpu_limit"`
+		DefaultMemoryLimit        string `yaml:"default_memory_limit"`
+		EnforceNamespaceIsolation bool   `yaml:"enforce_namespace_isolation"`
 	} `yaml:"policy"`
 	EventBus struct {
 		BufferSize int `yaml:"buffer_size"`
@@ -58,6 +58,7 @@ func main() {
 		DefaultMemoryLimit:        config.Policy.DefaultMemoryLimit,
 		EnforceNamespaceIsolation: config.Policy.EnforceNamespaceIsolation,
 	})
+	_ = policyEngine // TODO: integrate policy engine into reconciler
 
 	// Create reconciler engine
 	reconcilerEngine := reconciler.New(
