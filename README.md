@@ -142,6 +142,18 @@ autoscaler:
 scheduler:
   cost_provider: "aws"           # aws, gcp, azure, custom
   node_registry: "kubernetes"    # kubernetes, custom
+
+dependency:
+  enabled: true
+  max_depth: 10
+
+prediction:
+  model_type: "simple"          # simple, ml, custom
+  check_interval: 60s
+
+multitenancy:
+  enabled: true
+  default_isolation: true
 ```
 
 ---
@@ -234,6 +246,92 @@ rollout_strategy:
       - conversion_rate
       - user_engagement
     auto_select_winner: true
+```
+
+---
+
+## New Features (v2.0)
+
+### Dependency Graph
+
+Automatically deploy services in the correct order based on dependencies:
+
+```yaml
+dependencies:
+  - workloadId: "database"
+    type: "depends_on"
+    condition: "healthy"
+    timeout: "5m"
+  - workloadId: "cache"
+    type: "waits_for"
+    condition: "running"
+```
+
+The dependency resolver:
+- Performs topological sort to determine deployment order
+- Detects circular dependencies
+- Waits for dependencies to reach specified conditions
+- Supports conditions: `running`, `healthy`, `ready`
+
+### Failure Prediction
+
+ML-based failure prediction using historical crash/OOM data:
+
+```yaml
+failure_prediction:
+  enabled: true
+  modelType: "ml"              # simple, ml, custom
+  predictionWindow: "15m"
+  threshold: 0.75              # probability threshold (0-1)
+  features:
+    - cpu_usage
+    - memory_usage
+    - request_rate
+    - error_rate
+  mitigationActions:
+    - scale_up
+    - restart
+    - migrate
+```
+
+The prediction engine:
+- Extracts features from workload metrics
+- Uses configurable ML models (simple heuristic or custom)
+- Triggers mitigation actions when failure probability exceeds threshold
+- Collects historical data for model training
+
+### Multi-tenancy Engine
+
+Hard isolation between organizations with resource quotas:
+
+```yaml
+tenant:
+  id: "org-123"
+  name: "Acme Corp"
+  namespace: "acme-prod"
+  labels:
+    environment: "production"
+  quota:
+    maxCPU: "16"
+    maxMemory: "64Gi"
+    maxWorkloads: 50
+    maxReplicas: 200
+    maxStorage: "1Ti"
+    maxCustomMetrics: 20
+  isolation:
+    networkPolicy: true
+    resourceQuota: true
+    limitRange: true
+    podSecurityPolicy: true
+    storageClass: "tenant-storage"
+```
+
+The multi-tenancy engine:
+- Enforces resource quotas per tenant
+- Applies hard isolation policies (network, resource limits)
+- Tracks resource usage per tenant
+- Validates workloads against tenant constraints
+- Supports dedicated storage classes per tenant
 
 // Register in cmd/core/main.go
 engine.RegisterController(&MyCustomController{})

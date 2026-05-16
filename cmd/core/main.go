@@ -9,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kranix-io/kranix-core/internal/autoscaler"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
 	"github.com/kranix-io/kranix-core/internal/plugin"
 	"github.com/kranix-io/kranix-core/internal/policy"
 	"github.com/kranix-io/kranix-core/internal/reconciler"
+	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"gopkg.in/yaml.v3"
@@ -51,7 +53,18 @@ func main() {
 	// Initialize components
 	store := state.NewMemoryStore()
 	eventBus := eventbus.New(config.EventBus.BufferSize)
-	scheduler := scheduler.New()
+
+	// Initialize cost provider and node registry for scheduler
+	costProvider := &scheduler.DefaultCostProvider{}
+	nodeRegistry := &scheduler.DefaultNodeRegistry{}
+	sched := scheduler.New(costProvider, nodeRegistry)
+
+	// Initialize rollout manager and autoscaler
+	rolloutManager := rollout.New(store, sched, eventBus)
+	metricsProvider := &autoscaler.DefaultMetricsProvider{}
+	autoscalerConfig := autoscaler.Config{CheckInterval: 30 * time.Second}
+	autoscalerEngine := autoscaler.New(autoscalerConfig, store, metricsProvider)
+
 	controllerReg := plugin.NewRegistry()
 	policyEngine := policy.New(policy.Config{
 		DefaultCPULimit:           config.Policy.DefaultCPULimit,
@@ -68,8 +81,10 @@ func main() {
 		},
 		store,
 		eventBus,
-		scheduler,
+		sched,
 		controllerReg,
+		rolloutManager,
+		autoscalerEngine,
 	)
 
 	// Setup context with cancellation

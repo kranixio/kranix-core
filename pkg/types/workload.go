@@ -22,18 +22,23 @@ type Workload struct {
 
 	// History - immutable log of state transitions
 	History []WorkloadStateTransition `json:"history,omitempty"`
+
+	// Tenant - multi-tenancy information
+	Tenant *TenantInfo `json:"tenant,omitempty"`
 }
 
 // WorkloadSpec defines the desired configuration of a workload.
 type WorkloadSpec struct {
-	Image           string               `json:"image"`
-	Replicas        int32                `json:"replicas"`
-	Env             map[string]string    `json:"env,omitempty"`
-	Resources       ResourceRequirements `json:"resources,omitempty"`
-	Backend         string               `json:"backend"` // docker, kubernetes, etc.
-	RolloutStrategy RolloutStrategy      `json:"rollout_strategy,omitempty"`
-	AutoScaling     *AutoScalingConfig   `json:"auto_scaling,omitempty"`
-	Scheduling      *SchedulingConfig    `json:"scheduling,omitempty"`
+	Image             string               `json:"image"`
+	Replicas          int32                `json:"replicas"`
+	Env               map[string]string    `json:"env,omitempty"`
+	Resources         ResourceRequirements `json:"resources,omitempty"`
+	Backend           string               `json:"backend"` // docker, kubernetes, etc.
+	RolloutStrategy   RolloutStrategy      `json:"rollout_strategy,omitempty"`
+	AutoScaling       *AutoScalingConfig   `json:"auto_scaling,omitempty"`
+	Scheduling        *SchedulingConfig    `json:"scheduling,omitempty"`
+	Dependencies      []Dependency         `json:"dependencies,omitempty"`
+	FailurePrediction *FailurePrediction   `json:"failure_prediction,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -198,5 +203,52 @@ type ABTestConfig struct {
 	TrafficSplit     int32    `json:"traffic_split"` // percentage for variant B
 	AnalysisDuration string   `json:"analysis_duration,omitempty"`
 	Metrics          []string `json:"metrics,omitempty"`
-	AutoSelectWinner bool     `json:"auto_select_winner,omitempty"`
+	AutoSelectWinner bool     `json:"autoSelectWinner,omitempty"`
+}
+
+// Dependency defines a dependency relationship between workloads.
+type Dependency struct {
+	WorkloadID string `json:"workloadId"`
+	Type       string `json:"type"`                // depends_on, waits_for, requires
+	Condition  string `json:"condition,omitempty"` // running, healthy, ready
+	Timeout    string `json:"timeout,omitempty"`   // duration string like "5m"
+}
+
+// FailurePrediction defines ML-based failure prediction configuration.
+type FailurePrediction struct {
+	Enabled           bool     `json:"enabled"`
+	ModelType         string   `json:"modelType"`                   // simple, ml, custom
+	PredictionWindow  string   `json:"predictionWindow,omitempty"`  // time window for prediction
+	Threshold         float64  `json:"threshold"`                   // probability threshold (0-1)
+	Features          []string `json:"features,omitempty"`          // cpu_usage, memory_usage, request_rate, error_rate
+	MitigationActions []string `json:"mitigationActions,omitempty"` // scale_up, restart, migrate
+}
+
+// TenantInfo defines multi-tenancy information for a workload.
+type TenantInfo struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Namespace string            `json:"namespace"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Quota     *TenantQuota      `json:"quota,omitempty"`
+	Isolation *TenantIsolation  `json:"isolation,omitempty"`
+}
+
+// TenantQuota defines resource quotas for a tenant.
+type TenantQuota struct {
+	MaxCPU           string `json:"maxCPU,omitempty"`
+	MaxMemory        string `json:"maxMemory,omitempty"`
+	MaxWorkloads     int32  `json:"maxWorkloads,omitempty"`
+	MaxReplicas      int32  `json:"maxReplicas,omitempty"`
+	MaxStorage       string `json:"maxStorage,omitempty"`
+	MaxCustomMetrics int32  `json:"maxCustomMetrics,omitempty"`
+}
+
+// TenantIsolation defines isolation mechanisms for a tenant.
+type TenantIsolation struct {
+	NetworkPolicy     bool   `json:"networkPolicy"`
+	ResourceQuota     bool   `json:"resourceQuota"`
+	LimitRange        bool   `json:"limitRange"`
+	PodSecurityPolicy bool   `json:"podSecurityPolicy"`
+	StorageClass      string `json:"storageClass,omitempty"`
 }
