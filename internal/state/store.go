@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/kranix-io/kranix-core/internal/eventsourcing"
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
 
@@ -25,17 +26,19 @@ type Store interface {
 
 // MemoryStore provides an in-memory implementation of Store.
 type MemoryStore struct {
-	workloads map[string]*types.Workload
-	mu        sync.RWMutex
-	watchers  []chan types.Event
+	workloads  map[string]*types.Workload
+	mu         sync.RWMutex
+	watchers   []chan types.Event
 	muWatchers sync.RWMutex
+	eventStore *eventsourcing.Store
 }
 
 // NewMemoryStore creates a new in-memory state store.
-func NewMemoryStore() *MemoryStore {
+func NewMemoryStore(eventStore *eventsourcing.Store) *MemoryStore {
 	return &MemoryStore{
-		workloads: make(map[string]*types.Workload),
-		watchers:  make([]chan types.Event, 0),
+		workloads:  make(map[string]*types.Workload),
+		watchers:   make([]chan types.Event, 0),
+		eventStore: eventStore,
 	}
 }
 
@@ -70,6 +73,12 @@ func (s *MemoryStore) Create(ctx context.Context, workload *types.Workload) erro
 	}
 
 	s.workloads[workload.ID] = workload
+
+	// Record event in event store
+	if s.eventStore != nil {
+		_ = s.eventStore.RecordWorkloadCreated(ctx, workload)
+	}
+
 	s.notify(types.Event{
 		Type:     types.WorkloadDeployRequested,
 		Workload: workload,
@@ -82,11 +91,18 @@ func (s *MemoryStore) Update(ctx context.Context, workload *types.Workload) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.workloads[workload.ID]; !exists {
+	oldWorkload, exists := s.workloads[workload.ID]
+	if !exists {
 		return ErrWorkloadNotFound
 	}
 
 	s.workloads[workload.ID] = workload
+
+	// Record event in event store
+	if s.eventStore != nil {
+		_ = s.eventStore.RecordWorkloadUpdated(ctx, workload, &oldWorkload.Spec)
+	}
+
 	s.notify(types.Event{
 		Type:     types.WorkloadUpdated,
 		Workload: workload,
@@ -105,6 +121,12 @@ func (s *MemoryStore) Delete(ctx context.Context, id string) error {
 	}
 
 	delete(s.workloads, id)
+
+	// Record event in event store
+	if s.eventStore != nil {
+		_ = s.eventStore.RecordWorkloadDeleted(ctx, workload)
+	}
+
 	s.notify(types.Event{
 		Type:     types.WorkloadDeleted,
 		Workload: workload,

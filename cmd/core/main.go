@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/kranix-io/kranix-core/internal/autoscaler"
+	"github.com/kranix-io/kranix-core/internal/drift"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
+	"github.com/kranix-io/kranix-core/internal/eventsourcing"
 	"github.com/kranix-io/kranix-core/internal/plugin"
 	"github.com/kranix-io/kranix-core/internal/policy"
 	"github.com/kranix-io/kranix-core/internal/reconciler"
 	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/state"
+	"github.com/kranix-io/kranix-core/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,6 +41,16 @@ type Config struct {
 	EventBus struct {
 		BufferSize int `yaml:"buffer_size"`
 	} `yaml:"eventbus"`
+	DriftDetection struct {
+		Enabled       bool          `yaml:"enabled"`
+		CheckInterval time.Duration `yaml:"check_interval"`
+	} `yaml:"drift_detection"`
+	EventSourcing struct {
+		Enabled        bool          `yaml:"enabled"`
+		StorageBackend string        `yaml:"storage_backend"`
+		MaxEventAge    time.Duration `yaml:"max_event_age"`
+		Compression    bool          `yaml:"compression"`
+	} `yaml:"event_sourcing"`
 }
 
 func main() {
@@ -51,8 +64,17 @@ func main() {
 	}
 
 	// Initialize components
-	store := state.NewMemoryStore()
 	eventBus := eventbus.New(config.EventBus.BufferSize)
+
+	// Initialize event sourcing store
+	eventStore := eventsourcing.New(eventsourcing.Config{
+		Enabled:        config.EventSourcing.Enabled,
+		StorageBackend: config.EventSourcing.StorageBackend,
+		MaxEventAge:    config.EventSourcing.MaxEventAge,
+		Compression:    config.EventSourcing.Compression,
+	}, eventBus)
+
+	store := state.NewMemoryStore(eventStore)
 
 	// Initialize cost provider and node registry for scheduler
 	costProvider := &scheduler.DefaultCostProvider{}
@@ -73,6 +95,21 @@ func main() {
 	})
 	_ = policyEngine // TODO: integrate policy engine into reconciler
 
+	// Initialize drift detector
+	var driftDetector *drift.Detector
+	if config.DriftDetection.Enabled {
+		driftDetector = drift.New(drift.Config{
+			Enabled:       config.DriftDetection.Enabled,
+			CheckInterval: config.DriftDetection.CheckInterval,
+			DefaultTolerance: &types.DriftTolerance{
+				ReplicaVariance:     1,
+				ResourceVariancePct: 10.0,
+				EnvVarDriftAllowed:  false,
+				LabelDriftAllowed:   true,
+			},
+		}, eventBus, nil) // Runtime driver will be injected later
+	}
+
 	// Create reconciler engine
 	reconcilerEngine := reconciler.New(
 		reconciler.Config{
@@ -85,6 +122,7 @@ func main() {
 		controllerReg,
 		rolloutManager,
 		autoscalerEngine,
+		driftDetector,
 	)
 
 	// Setup context with cancellation

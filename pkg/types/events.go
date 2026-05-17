@@ -24,6 +24,14 @@ const (
 	WorkloadRolloutCompleted EventType = "WorkloadRolloutCompleted"
 	// WorkloadRolloutFailed is emitted when a rollout strategy fails
 	WorkloadRolloutFailed EventType = "WorkloadRolloutFailed"
+	// WorkloadDriftDetected is emitted when drift is detected between desired and actual state
+	WorkloadDriftDetected EventType = "WorkloadDriftDetected"
+	// WorkloadDriftReconciled is emitted when drift is automatically reconciled
+	WorkloadDriftReconciled EventType = "WorkloadDriftReconciled"
+	// EventStored is emitted when a domain event is persisted to the event store
+	EventStored EventType = "EventStored"
+	// EventReplayed is emitted when events are replayed to reconstruct state
+	EventReplayed EventType = "EventReplayed"
 )
 
 // Event represents an internal event in the system.

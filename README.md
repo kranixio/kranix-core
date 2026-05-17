@@ -15,8 +15,8 @@
 - Enforces infra policies (resource limits, namespace isolation, rollout rules)
 - Provides the plugin interface for extending Kranix with custom controllers
 
--
 ## Architecture position
+```
 kranix-api  ──►  kranix-core  ──►  kranix-runtime
                     │
                     ├──►  kranix-operator
@@ -134,6 +134,16 @@ policy:
 
 eventbus:
   buffer_size: 1024
+
+drift_detection:
+  enabled: true
+  check_interval: 30s
+
+event_sourcing:
+  enabled: true
+  storage_backend: memory  # memory | postgres | etcd
+  max_event_age: 720h      # 30 days
+  compression: false
 
 autoscaler:
   check_interval: 30s
@@ -333,8 +343,84 @@ The multi-tenancy engine:
 - Validates workloads against tenant constraints
 - Supports dedicated storage classes per tenant
 
-// Register in cmd/core/main.go
-engine.RegisterController(&MyCustomController{})
+---
+
+## New Features (v3.0)
+
+### Drift Detection
+
+Automatically detect when runtime state diverges from declared specifications:
+
+```yaml
+drift_detection:
+  enabled: true
+  check_interval: 30s
+  alert_on_drift: true
+  auto_reconcile: true
+  monitored_fields:
+    - replicas
+    - env
+  tolerance:
+    replica_variance: 1
+    resource_variance_pct: 10.0
+    env_var_drift_allowed: false
+    label_drift_allowed: true
+  notification_hooks:
+    - type: webhook
+      url: "https://hooks.example.com/drift"
+      headers:
+        Authorization: "Bearer secret-token"
+    - type: slack
+      url: "https://hooks.slack.com/services/..."
+```
+
+The drift detection engine:
+- Compares desired spec with actual runtime state at configurable intervals
+- Detects replica count drift, resource drift, and configuration drift
+- Supports configurable tolerance thresholds for acceptable variance
+- Sends alerts via webhooks, Slack, email, or PagerDuty
+- Optionally auto-reconciles drift by triggering reconciliation
+- Provides detailed drift reports with severity levels (low, medium, high, critical)
+
+### Event Sourcing
+
+Full immutable log of every state transition for audit and debugging:
+
+```yaml
+event_sourcing:
+  enabled: true
+  storage_backend: memory  # memory | postgres | etcd
+  max_event_age: 720h      # 30 days
+  compression: false
+```
+
+The event sourcing system:
+- Records every state transition as an immutable domain event
+- Stores events with versioning for each workload aggregate
+- Supports event replay to reconstruct historical state
+- Provides event subscription for real-time monitoring
+- Includes automatic cleanup of old events based on age
+- Exposes event history via API endpoints in kranix-api
+
+Event types recorded:
+- `WorkloadCreated` - Initial workload creation
+- `WorkloadUpdated` - Spec updates with old/new values
+- `WorkloadDeleted` - Workload deletion
+- `WorkloadPhaseTransition` - Phase changes with reason
+- `WorkloadDriftDetected` - Drift detection events
+- `WorkloadDriftReconciled` - Auto-reconciliation events
+- `WorkloadScaled` - Scaling events with reason
+
+API Endpoints (via kranix-api):
+- `GET /api/v1/workloads/{id}/events` - Retrieve event history for a workload
+- `GET /api/v1/events/{id}` - Retrieve a single event by ID
+- `GET /api/v1/workloads/{id}/drift` - Retrieve drift detection reports
+
+---
+
+## Configuration
+
+`kranix-core` is configured via YAML:
 ```
 
 ---

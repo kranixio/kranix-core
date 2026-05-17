@@ -13,3 +13,13 @@ policy:
 
 eventbus:
   buffer_size: 1024
+
+drift_detection:
+  enabled: true
+  check_interval: 30s
+
+event_sourcing:
+  enabled: true
+  storage_backend: memory  # memory | postgres | etcd
+  max_event_age: 720h      # 30 days
+  compression: false

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"time"
 )
 
@@ -29,16 +30,17 @@ type Workload struct {
 
 // WorkloadSpec defines the desired configuration of a workload.
 type WorkloadSpec struct {
-	Image             string               `json:"image"`
-	Replicas          int32                `json:"replicas"`
-	Env               map[string]string    `json:"env,omitempty"`
-	Resources         ResourceRequirements `json:"resources,omitempty"`
-	Backend           string               `json:"backend"` // docker, kubernetes, etc.
-	RolloutStrategy   RolloutStrategy      `json:"rollout_strategy,omitempty"`
-	AutoScaling       *AutoScalingConfig   `json:"auto_scaling,omitempty"`
-	Scheduling        *SchedulingConfig    `json:"scheduling,omitempty"`
-	Dependencies      []Dependency         `json:"dependencies,omitempty"`
-	FailurePrediction *FailurePrediction   `json:"failure_prediction,omitempty"`
+	Image             string                `json:"image"`
+	Replicas          int32                 `json:"replicas"`
+	Env               map[string]string     `json:"env,omitempty"`
+	Resources         ResourceRequirements  `json:"resources,omitempty"`
+	Backend           string                `json:"backend"` // docker, kubernetes, etc.
+	RolloutStrategy   RolloutStrategy       `json:"rollout_strategy,omitempty"`
+	AutoScaling       *AutoScalingConfig    `json:"auto_scaling,omitempty"`
+	Scheduling        *SchedulingConfig     `json:"scheduling,omitempty"`
+	Dependencies      []Dependency          `json:"dependencies,omitempty"`
+	FailurePrediction *FailurePrediction    `json:"failure_prediction,omitempty"`
+	DriftDetection    *DriftDetectionConfig `json:"drift_detection,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -251,4 +253,90 @@ type TenantIsolation struct {
 	LimitRange        bool   `json:"limitRange"`
 	PodSecurityPolicy bool   `json:"podSecurityPolicy"`
 	StorageClass      string `json:"storageClass,omitempty"`
+}
+
+// DriftDetectionConfig defines drift detection configuration for a workload.
+type DriftDetectionConfig struct {
+	Enabled           bool               `json:"enabled"`
+	CheckInterval     string             `json:"check_interval,omitempty"` // e.g., "30s", "1m"
+	AlertOnDrift      bool               `json:"alert_on_drift"`
+	AutoReconcile     bool               `json:"auto_reconcile"`
+	MonitoredFields   []string           `json:"monitored_fields,omitempty"` // fields to monitor for drift
+	Tolerance         *DriftTolerance    `json:"tolerance,omitempty"`
+	NotificationHooks []NotificationHook `json:"notification_hooks,omitempty"`
+}
+
+// DriftTolerance defines acceptable variance before triggering drift alerts.
+type DriftTolerance struct {
+	ReplicaVariance        int32   `json:"replica_variance,omitempty"`      // allowed replica count difference
+	ResourceVariancePct    float64 `json:"resource_variance_pct,omitempty"` // allowed resource percentage difference
+	EnvVarDriftAllowed     bool    `json:"env_var_drift_allowed"`           // allow env var changes
+	LabelDriftAllowed      bool    `json:"label_drift_allowed"`             // allow label changes
+	AnnotationDriftAllowed bool    `json:"annotation_drift_allowed"`        // allow annotation changes
+}
+
+// NotificationHook defines a webhook or callback for drift alerts.
+type NotificationHook struct {
+	Type    string            `json:"type"` // webhook, slack, email, pagerduty
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Payload string            `json:"payload,omitempty"` // template for payload
+	Secret  string            `json:"secret,omitempty"`  // for webhook authentication
+}
+
+// DriftReport represents a detected drift between desired and actual state.
+type DriftReport struct {
+	WorkloadID     string         `json:"workload_id"`
+	WorkloadName   string         `json:"workload_name"`
+	Namespace      string         `json:"namespace"`
+	Timestamp      time.Time      `json:"timestamp"`
+	DetectedAt     time.Time      `json:"detected_at"`
+	DriftedFields  []DriftedField `json:"drifted_fields"`
+	Severity       DriftSeverity  `json:"severity"`
+	AutoReconciled bool           `json:"auto_reconciled"`
+	Message        string         `json:"message"`
+}
+
+// DriftedField represents a specific field that has drifted.
+type DriftedField struct {
+	FieldPath string      `json:"field_path"`
+	Desired   interface{} `json:"desired"`
+	Actual    interface{} `json:"actual"`
+	DiffType  string      `json:"diff_type"` // added, removed, modified
+}
+
+// DriftSeverity represents the severity level of a drift.
+type DriftSeverity string
+
+const (
+	DriftSeverityLow      DriftSeverity = "low"
+	DriftSeverityMedium   DriftSeverity = "medium"
+	DriftSeverityHigh     DriftSeverity = "high"
+	DriftSeverityCritical DriftSeverity = "critical"
+)
+
+// DomainEvent represents a single state change event in the event sourcing log.
+type DomainEvent struct {
+	ID            string                 `json:"id"`
+	Aggregate     string                 `json:"aggregate"`      // workload ID
+	AggregateType string                 `json:"aggregate_type"` // "workload"
+	Type          string                 `json:"type"`           // event type
+	Version       int64                  `json:"version"`        // event version
+	Timestamp     time.Time              `json:"timestamp"`
+	Data          map[string]interface{} `json:"data"`
+	Metadata      map[string]string      `json:"metadata,omitempty"`
+}
+
+// EventStore defines the interface for event sourcing storage.
+type EventStore interface {
+	// Append adds a new event to the store
+	Append(ctx context.Context, event *DomainEvent) error
+	// GetEvents retrieves events for an aggregate
+	GetEvents(ctx context.Context, aggregateID string, fromVersion int64, limit int) ([]*DomainEvent, error)
+	// GetEvent retrieves a single event by ID
+	GetEvent(ctx context.Context, eventID string) (*DomainEvent, error)
+	// Replay reconstructs state by replaying events
+	Replay(ctx context.Context, aggregateID string) (interface{}, error)
+	// Subscribe to events for an aggregate
+	Subscribe(ctx context.Context, aggregateID string) (<-chan *DomainEvent, error)
 }

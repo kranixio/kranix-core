@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kranix-io/kranix-core/internal/autoscaler"
+	"github.com/kranix-io/kranix-core/internal/drift"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
 	"github.com/kranix-io/kranix-core/internal/plugin"
 	"github.com/kranix-io/kranix-core/internal/rollout"
@@ -29,11 +30,12 @@ type Engine struct {
 	controllerReg  *plugin.Registry
 	rolloutManager *rollout.Manager
 	autoscaler     *autoscaler.Engine
+	driftDetector  *drift.Detector
 	stopCh         chan struct{}
 }
 
 // New creates a new reconciliation engine.
-func New(config Config, store state.Store, eventBus *eventbus.EventBus, scheduler *scheduler.Scheduler, controllerReg *plugin.Registry, rolloutManager *rollout.Manager, autoscaler *autoscaler.Engine) *Engine {
+func New(config Config, store state.Store, eventBus *eventbus.EventBus, scheduler *scheduler.Scheduler, controllerReg *plugin.Registry, rolloutManager *rollout.Manager, autoscaler *autoscaler.Engine, driftDetector *drift.Detector) *Engine {
 	return &Engine{
 		config:         config,
 		store:          store,
@@ -42,6 +44,7 @@ func New(config Config, store state.Store, eventBus *eventbus.EventBus, schedule
 		controllerReg:  controllerReg,
 		rolloutManager: rolloutManager,
 		autoscaler:     autoscaler,
+		driftDetector:  driftDetector,
 		stopCh:         make(chan struct{}),
 	}
 }
@@ -54,6 +57,14 @@ func (e *Engine) Start(ctx context.Context) {
 	// Start the auto-scaler engine
 	if e.autoscaler != nil {
 		go e.autoscaler.Start(ctx)
+	}
+
+	// Start the drift detector
+	if e.driftDetector != nil {
+		workloads, err := e.store.List(ctx, "")
+		if err == nil {
+			go e.driftDetector.Start(ctx, workloads)
+		}
 	}
 
 	log.Println("Reconciliation engine started")
