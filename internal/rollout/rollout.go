@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kranix-io/kranix-core/internal/eventbus"
+	"github.com/kranix-io/kranix-core/internal/healthgate"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/pkg/types"
@@ -14,22 +15,35 @@ import (
 
 // Manager handles rollout strategies for workloads.
 type Manager struct {
-	store     state.Store
-	scheduler *scheduler.Scheduler
-	eventBus  *eventbus.EventBus
+	store      state.Store
+	scheduler  *scheduler.Scheduler
+	eventBus   *eventbus.EventBus
+	healthGate *healthgate.Engine
 }
 
 // New creates a new rollout manager.
-func New(store state.Store, scheduler *scheduler.Scheduler, eventBus *eventbus.EventBus) *Manager {
+func New(store state.Store, scheduler *scheduler.Scheduler, eventBus *eventbus.EventBus, healthGate *healthgate.Engine) *Manager {
 	return &Manager{
-		store:     store,
-		scheduler: scheduler,
-		eventBus:  eventBus,
+		store:      store,
+		scheduler:  scheduler,
+		eventBus:   eventBus,
+		healthGate: healthGate,
 	}
 }
 
 // ExecuteRollout executes the rollout strategy for a workload.
 func (m *Manager) ExecuteRollout(ctx context.Context, workload *types.Workload) error {
+	// Evaluate health gates before rollout
+	if m.healthGate != nil {
+		healthStatus, err := m.healthGate.EvaluateHealthGates(ctx, workload)
+		if err != nil {
+			log.Printf("Failed to evaluate health gates for workload %s: %v", workload.ID, err)
+		} else if healthStatus.Blocked {
+			log.Printf("Rollout blocked for workload %s: %s", workload.ID, healthStatus.BlockReason)
+			return fmt.Errorf("rollout blocked by health gate: %s", healthStatus.BlockReason)
+		}
+	}
+
 	strategy := workload.Spec.RolloutStrategy
 
 	if strategy.Type == "" {
@@ -153,8 +167,8 @@ func (m *Manager) executeCanary(ctx context.Context, workload *types.Workload) e
 	}
 
 	m.publishEvent(ctx, workload, types.WorkloadRolloutStarted, map[string]any{
-		"strategy":  "canary",
-		"replicas":  config.Replicas,
+		"strategy":   "canary",
+		"replicas":   config.Replicas,
 		"percentage": config.Percentage,
 	})
 
@@ -178,9 +192,9 @@ func (m *Manager) executeCanary(ctx context.Context, workload *types.Workload) e
 	canaryWorkload.ID = workload.ID + "-canary"
 	canaryWorkload.Spec.Replicas = canaryReplicas
 	canaryWorkload.Labels = map[string]string{
-		"rollout":   "canary",
-		"parent":    workload.ID,
-		"version":   "canary",
+		"rollout": "canary",
+		"parent":  workload.ID,
+		"version": "canary",
 	}
 
 	// Deploy canary

@@ -41,6 +41,7 @@ type WorkloadSpec struct {
 	Dependencies      []Dependency          `json:"dependencies,omitempty"`
 	FailurePrediction *FailurePrediction    `json:"failure_prediction,omitempty"`
 	DriftDetection    *DriftDetectionConfig `json:"drift_detection,omitempty"`
+	HealthGate        *HealthGateConfig     `json:"health_gate,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -339,4 +340,41 @@ type EventStore interface {
 	Replay(ctx context.Context, aggregateID string) (interface{}, error)
 	// Subscribe to events for an aggregate
 	Subscribe(ctx context.Context, aggregateID string) (<-chan *DomainEvent, error)
+}
+
+// HealthGateConfig defines health gate configuration for blocking rollouts.
+type HealthGateConfig struct {
+	Enabled     bool          `json:"enabled"`
+	Checks      []HealthCheck `json:"checks"`
+	Timeout     string        `json:"timeout,omitempty"` // e.g., "5m"
+	FailureMode string        `json:"failure_mode"`      // block, warn, ignore
+}
+
+// HealthCheck defines a single health check.
+type HealthCheck struct {
+	Name      string            `json:"name"`
+	Type      string            `json:"type"` // http, tcp, command, prometheus, custom
+	Config    map[string]string `json:"config"`
+	Interval  string            `json:"interval,omitempty"`  // e.g., "30s"
+	Threshold int32             `json:"threshold,omitempty"` // number of consecutive successes/failures
+}
+
+// HealthCheckResult represents the result of a health check.
+type HealthCheckResult struct {
+	CheckName   string            `json:"check_name"`
+	Status      string            `json:"status"` // passing, failing, unknown
+	Message     string            `json:"message,omitempty"`
+	LastChecked time.Time         `json:"last_checked"`
+	Duration    time.Duration     `json:"duration"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// HealthGateStatus represents the overall status of health gates for a workload.
+type HealthGateStatus struct {
+	WorkloadID    string              `json:"workload_id"`
+	OverallStatus string              `json:"overall_status"` // passing, failing, blocked
+	Results       []HealthCheckResult `json:"results"`
+	LastEvaluated time.Time           `json:"last_evaluated"`
+	Blocked       bool                `json:"blocked"`
+	BlockReason   string              `json:"block_reason,omitempty"`
 }

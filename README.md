@@ -418,6 +418,96 @@ API Endpoints (via kranix-api):
 
 ---
 
+## New Features (v4.0)
+
+### Persistent State Backends
+
+Production-grade persistent storage options for workload state:
+
+```yaml
+state:
+  backend: memory          # memory | postgres | etcd
+  postgres_dsn: ""         # e.g., "postgres://user:pass@localhost:5432/kranix"
+  etcd_endpoints: []       # e.g., ["localhost:2379"]
+```
+
+**Memory Backend (Default):**
+- In-memory storage for development and testing
+- Fast but data is lost on restart
+- Suitable for single-node deployments
+
+**Postgres Backend:**
+- Persistent relational database storage
+- ACID transactions for data consistency
+- Supports complex queries and joins
+- Automatic backups via standard Postgres tools
+- Recommended for production deployments
+
+**etcd Backend:**
+- Distributed key-value store
+- Strong consistency guarantees
+- Built-in watch capabilities for real-time updates
+- Automatic leader election and failover
+- Ideal for distributed systems and Kubernetes environments
+
+### Health Gate Engine
+
+Block rollouts until health checks pass to ensure safe deployments:
+
+```yaml
+health_gate:
+  enabled: true
+  default_timeout: 5m
+  check_interval: 30s
+```
+
+Workload-level health gate configuration:
+
+```yaml
+spec:
+  health_gate:
+    enabled: true
+    timeout: "5m"
+    failure_mode: "block"  # block | warn | ignore
+    checks:
+      - name: "api-health"
+        type: "http"
+        config:
+          url: "http://api-service:8080/health"
+          method: "GET"
+          expected_status: "200"
+      - name: "database-ready"
+        type: "tcp"
+        config:
+          host: "db-service"
+          port: "5432"
+      - name: "prometheus-metrics"
+        type: "prometheus"
+        config:
+          query: "up{job=\"my-app\"}"
+          prometheus_url: "http://prometheus:9090"
+```
+
+The health gate engine:
+- Evaluates health checks before allowing rollouts to proceed
+- Supports HTTP, TCP, command, and Prometheus query checks
+- Configurable failure modes (block, warn, ignore)
+- Timeout handling for long-running checks
+- Individual check result tracking with status and metadata
+- Real-time health status updates via event bus
+
+Health check types supported:
+- **HTTP** - Check HTTP endpoints with custom status codes
+- **TCP** - Verify TCP connectivity to services
+- **Command** - Execute custom health check commands
+- **Prometheus** - Query Prometheus metrics for health assessment
+
+API Endpoints (via kranix-api):
+- `GET /api/v1/workloads/{id}/health` - Retrieve health gate status
+- `POST /api/v1/workloads/{id}/health/evaluate` - Manually trigger health gate evaluation
+
+---
+
 ## Configuration
 
 `kranix-core` is configured via YAML:

@@ -13,6 +13,7 @@ import (
 	"github.com/kranix-io/kranix-core/internal/drift"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
 	"github.com/kranix-io/kranix-core/internal/eventsourcing"
+	"github.com/kranix-io/kranix-core/internal/healthgate"
 	"github.com/kranix-io/kranix-core/internal/plugin"
 	"github.com/kranix-io/kranix-core/internal/policy"
 	"github.com/kranix-io/kranix-core/internal/reconciler"
@@ -30,8 +31,9 @@ type Config struct {
 		MaxConcurrentReconciles int           `yaml:"max_concurrent_reconciles"`
 	} `yaml:"core"`
 	State struct {
-		Backend     string `yaml:"backend"`
-		PostgresDSN string `yaml:"postgres_dsn"`
+		Backend       string   `yaml:"backend"` // memory | postgres | etcd
+		PostgresDSN   string   `yaml:"postgres_dsn"`
+		EtcdEndpoints []string `yaml:"etcd_endpoints"`
 	} `yaml:"state"`
 	Policy struct {
 		DefaultCPULimit           string `yaml:"default_cpu_limit"`
@@ -51,6 +53,11 @@ type Config struct {
 		MaxEventAge    time.Duration `yaml:"max_event_age"`
 		Compression    bool          `yaml:"compression"`
 	} `yaml:"event_sourcing"`
+	HealthGate struct {
+		Enabled        bool          `yaml:"enabled"`
+		DefaultTimeout time.Duration `yaml:"default_timeout"`
+		CheckInterval  time.Duration `yaml:"check_interval"`
+	} `yaml:"health_gate"`
 }
 
 func main() {
@@ -58,23 +65,54 @@ func main() {
 	flag.Parse()
 
 	// Load configuration
-	config, err := loadConfig(*configPath)
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+	config, loadErr := loadConfig(*configPath)
+	if loadErr != nil {
+		log.Fatalf("Failed to load config: %v", loadErr)
 	}
 
 	// Initialize components
 	eventBus := eventbus.New(config.EventBus.BufferSize)
 
-	// Initialize event sourcing store
-	eventStore := eventsourcing.New(eventsourcing.Config{
-		Enabled:        config.EventSourcing.Enabled,
-		StorageBackend: config.EventSourcing.StorageBackend,
-		MaxEventAge:    config.EventSourcing.MaxEventAge,
-		Compression:    config.EventSourcing.Compression,
-	}, eventBus)
+	// Initialize state store based on backend configuration
+	var store state.Store
+	var storeErr error
 
-	store := state.NewMemoryStore(eventStore)
+	switch config.State.Backend {
+	case "postgres":
+		if config.State.PostgresDSN == "" {
+			log.Fatalf("Postgres DSN is required when using postgres backend")
+		}
+		store, storeErr = state.NewPostgresStore(config.State.PostgresDSN)
+		if storeErr != nil {
+			log.Fatalf("Failed to create postgres store: %v", storeErr)
+		}
+	case "etcd":
+		if len(config.State.EtcdEndpoints) == 0 {
+			log.Fatalf("Etcd endpoints are required when using etcd backend")
+		}
+		store, storeErr = state.NewEtcdStore(config.State.EtcdEndpoints)
+		if storeErr != nil {
+			log.Fatalf("Failed to create etcd store: %v", storeErr)
+		}
+	case "memory":
+		fallthrough
+	default:
+		// Initialize event sourcing store for memory backend
+		eventStore := eventsourcing.New(eventsourcing.Config{
+			Enabled:        config.EventSourcing.Enabled,
+			StorageBackend: config.EventSourcing.StorageBackend,
+			MaxEventAge:    config.EventSourcing.MaxEventAge,
+			Compression:    config.EventSourcing.Compression,
+		}, eventBus)
+		store = state.NewMemoryStore(eventStore)
+	}
+
+	// Initialize health gate engine
+	healthGateEngine := healthgate.New(healthgate.Config{
+		Enabled:        config.HealthGate.Enabled,
+		DefaultTimeout: config.HealthGate.DefaultTimeout,
+		CheckInterval:  config.HealthGate.CheckInterval,
+	}, eventBus)
 
 	// Initialize cost provider and node registry for scheduler
 	costProvider := &scheduler.DefaultCostProvider{}
@@ -82,7 +120,7 @@ func main() {
 	sched := scheduler.New(costProvider, nodeRegistry)
 
 	// Initialize rollout manager and autoscaler
-	rolloutManager := rollout.New(store, sched, eventBus)
+	rolloutManager := rollout.New(store, sched, eventBus, healthGateEngine)
 	metricsProvider := &autoscaler.DefaultMetricsProvider{}
 	autoscalerConfig := autoscaler.Config{CheckInterval: 30 * time.Second}
 	autoscalerEngine := autoscaler.New(autoscalerConfig, store, metricsProvider)

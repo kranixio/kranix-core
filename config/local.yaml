@@ -5,6 +5,7 @@ core:
 state:
   backend: memory          # memory | postgres | etcd
   postgres_dsn: ""
+  etcd_endpoints: []       # e.g., ["localhost:2379"]
 
 policy:
   default_cpu_limit: "500m"
@@ -23,3 +24,28 @@ event_sourcing:
   storage_backend: memory  # memory | postgres | etcd
   max_event_age: 720h      # 30 days
   compression: false
+
+health_gate:
+  enabled: true
+  default_timeout: 5m
+  check_interval: 30s
+
+autoscaler:
+  check_interval: 30s
+  metrics_provider: "prometheus"  # prometheus, custom
+
+scheduler:
+  cost_provider: "aws"           # aws, gcp, azure, custom
+  node_registry: "kubernetes"    # kubernetes, custom
+
+dependency:
+  enabled: true
+  max_depth: 10
+
+prediction:
+  model_type: "simple"          # simple, ml, custom
+  check_interval: 60s
+
+multitenancy:
+  enabled: true
+  default_isolation: true

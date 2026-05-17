@@ -32,6 +32,14 @@ const (
 	EventStored EventType = "EventStored"
 	// EventReplayed is emitted when events are replayed to reconstruct state
 	EventReplayed EventType = "EventReplayed"
+	// HealthCheckPassed is emitted when a health check passes
+	HealthCheckPassed EventType = "HealthCheckPassed"
+	// HealthCheckFailed is emitted when a health check fails
+	HealthCheckFailed EventType = "HealthCheckFailed"
+	// HealthGateBlocked is emitted when health gates block a rollout
+	HealthGateBlocked EventType = "HealthGateBlocked"
+	// HealthGatePassed is emitted when health gates allow a rollout to proceed
+	HealthGatePassed EventType = "HealthGatePassed"
 )
 
 // Event represents an internal event in the system.
