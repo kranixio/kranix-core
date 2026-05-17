@@ -378,3 +378,140 @@ type HealthGateStatus struct {
 	Blocked       bool                `json:"blocked"`
 	BlockReason   string              `json:"block_reason,omitempty"`
 }
+
+// FederationConfig defines multi-cluster federation configuration.
+type FederationConfig struct {
+	Enabled    bool                  `json:"enabled"`
+	Clusters   []ClusterTarget       `json:"clusters,omitempty"`
+	Strategy   string                `json:"strategy,omitempty"` // parallel, sequential, rolling
+	SyncPolicy *FederationSyncPolicy `json:"sync_policy,omitempty"`
+}
+
+// ClusterTarget defines a target cluster for federation.
+type ClusterTarget struct {
+	Name     string   `json:"name"`
+	Context  string   `json:"context,omitempty"`
+	Weight   int32    `json:"weight,omitempty"`
+	Replicas *int32   `json:"replicas,omitempty"`
+	Regions  []string `json:"regions,omitempty"`
+	Enabled  bool     `json:"enabled"`
+}
+
+// FederationSyncPolicy defines sync policies for federation.
+type FederationSyncPolicy struct {
+	SyncInterval       string            `json:"sync_interval,omitempty"`
+	AutoSync           bool              `json:"auto_sync,omitempty"`
+	ConflictResolution string            `json:"conflict_resolution,omitempty"` // last-write-wins, source-wins, manual
+	ResourceSelector   *ResourceSelector `json:"resource_selector,omitempty"`
+}
+
+// ResourceSelector defines which resources to sync.
+type ResourceSelector struct {
+	LabelSelector map[string]string `json:"label_selector,omitempty"`
+	IncludeTypes  []string          `json:"include_types,omitempty"`
+	ExcludeTypes  []string          `json:"exclude_types,omitempty"`
+}
+
+// PipelineSpec defines a multi-stage deployment pipeline.
+type PipelineSpec struct {
+	Stages        []PipelineStage        `json:"stages"`
+	Triggers      []PipelineTrigger      `json:"triggers,omitempty"`
+	Notifications *PipelineNotifications `json:"notifications,omitempty"`
+	Timeout       string                 `json:"timeout,omitempty"`
+	RetryPolicy   *RetryPolicy           `json:"retry_policy,omitempty"`
+	Parallel      bool                   `json:"parallel,omitempty"`
+}
+
+// PipelineStage defines a stage in the deployment pipeline.
+type PipelineStage struct {
+	Name            string            `json:"name"`
+	Order           int32             `json:"order"`
+	Type            string            `json:"type"` // deploy, test, verify, promote, rollback
+	TargetApp       string            `json:"target_app,omitempty"`
+	TargetNamespace string            `json:"target_namespace,omitempty"`
+	Config          map[string]string `json:"config,omitempty"`
+	Conditions      []StageCondition  `json:"conditions,omitempty"`
+	OnFailure       string            `json:"on_failure,omitempty"` // stop, continue, rollback
+	Timeout         string            `json:"timeout,omitempty"`
+	ManualApproval  bool              `json:"manual_approval,omitempty"`
+}
+
+// StageCondition defines conditions for stage execution.
+type StageCondition struct {
+	Type     string `json:"type"` // previous_stage_success, metric_threshold, time_window
+	Stage    string `json:"stage,omitempty"`
+	Metric   string `json:"metric,omitempty"`
+	Operator string `json:"operator,omitempty"` // gt, lt, eq
+	Value    string `json:"value,omitempty"`
+}
+
+// PipelineTrigger defines triggers for pipeline execution.
+type PipelineTrigger struct {
+	Type    string            `json:"type"` // git, image, schedule, manual, webhook
+	Config  map[string]string `json:"config,omitempty"`
+	Enabled bool              `json:"enabled"`
+}
+
+// PipelineNotifications defines notification settings.
+type PipelineNotifications struct {
+	Enabled  bool                  `json:"enabled"`
+	Channels []NotificationChannel `json:"channels,omitempty"`
+	Events   []string              `json:"events,omitempty"` // started, completed, failed, stage_success, stage_failed
+}
+
+// NotificationChannel defines a notification channel.
+type NotificationChannel struct {
+	Type   string            `json:"type"` // slack, email, webhook, pagerduty
+	Config map[string]string `json:"config,omitempty"`
+}
+
+// RetryPolicy defines retry behavior for pipeline stages.
+type RetryPolicy struct {
+	MaxRetries      int32    `json:"max_retries,omitempty"`
+	BackoffDuration string   `json:"backoff_duration,omitempty"`
+	RetryOn         []string `json:"retry_on,omitempty"`
+}
+
+// PipelineStatus defines the status of a pipeline.
+type PipelineStatus struct {
+	Phase          PipelinePhase `json:"phase"`
+	CurrentStage   string        `json:"current_stage,omitempty"`
+	StagesStatus   []StageStatus `json:"stages_status,omitempty"`
+	LastExecution  time.Time     `json:"last_execution,omitempty"`
+	LastCompleted  time.Time     `json:"last_completed,omitempty"`
+	ExecutionCount int32         `json:"execution_count,omitempty"`
+	Message        string        `json:"message,omitempty"`
+}
+
+// PipelinePhase represents the phase of a pipeline.
+type PipelinePhase string
+
+const (
+	PipelinePhasePending   PipelinePhase = "Pending"
+	PipelinePhaseRunning   PipelinePhase = "Running"
+	PipelinePhaseSucceeded PipelinePhase = "Succeeded"
+	PipelinePhaseFailed    PipelinePhase = "Failed"
+	PipelinePhasePaused    PipelinePhase = "Paused"
+)
+
+// StageStatus defines the status of a pipeline stage.
+type StageStatus struct {
+	Name       string     `json:"name"`
+	Phase      StagePhase `json:"phase"`
+	Started    time.Time  `json:"started,omitempty"`
+	Completed  time.Time  `json:"completed,omitempty"`
+	Message    string     `json:"message,omitempty"`
+	RetryCount int32      `json:"retry_count,omitempty"`
+}
+
+// StagePhase represents the phase of a stage.
+type StagePhase string
+
+const (
+	StagePhasePending   StagePhase = "Pending"
+	StagePhaseRunning   StagePhase = "Running"
+	StagePhaseSucceeded StagePhase = "Succeeded"
+	StagePhaseFailed    StagePhase = "Failed"
+	StagePhaseSkipped   StagePhase = "Skipped"
+	StagePhaseWaiting   StagePhase = "Waiting"
+)
