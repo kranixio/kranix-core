@@ -52,13 +52,50 @@ type ResourceRequirements struct {
 	MemoryLimit   string `json:"memory_limit,omitempty"`
 }
 
+// BlueGreenConfig defines blue-green deployment configuration.
+type BlueGreenConfig struct {
+	PreviewReplicas      int32              `json:"preview_replicas,omitempty"`
+	AutoSwitch           bool               `json:"auto_switch,omitempty"`
+	VerificationDuration string             `json:"verification_duration,omitempty"`
+	VerificationSteps    []VerificationStep `json:"verification_steps,omitempty"`
+	RollbackOnFailure    bool               `json:"rollback_on_failure,omitempty"`
+}
+
+// VerificationStep defines a verification step for blue-green deployment.
+type VerificationStep struct {
+	Name       string            `json:"name"`
+	Type       string            `json:"type"` // http, tcp, script, metric
+	Config     map[string]string `json:"config,omitempty"`
+	Timeout    string            `json:"timeout,omitempty"`
+	RetryCount int32             `json:"retry_count,omitempty"`
+}
+
+// AutoRollbackConfig defines automatic rollback triggers based on metrics
+type AutoRollbackConfig struct {
+	Enabled      bool              `json:"enabled"`
+	Triggers     []RollbackTrigger `json:"triggers,omitempty"`
+	Cooldown     string            `json:"cooldown,omitempty"`
+	MaxRollbacks int32             `json:"max_rollbacks,omitempty"`
+}
+
+// RollbackTrigger defines a condition that triggers rollback
+type RollbackTrigger struct {
+	Type       string  `json:"type"` // error_rate, latency, custom_metric
+	Threshold  float64 `json:"threshold"`
+	Operator   string  `json:"operator"` // gt, lt, eq
+	Duration   string  `json:"duration,omitempty"`
+	MetricName string  `json:"metric_name,omitempty"`
+}
+
 // RolloutStrategy defines how the workload should be deployed.
 type RolloutStrategy struct {
-	Type           string        `json:"type"` // rolling, recreate, bluegreen, canary, abtest
-	MaxUnavailable int32         `json:"max_unavailable,omitempty"`
-	MaxSurge       int32         `json:"max_surge,omitempty"`
-	CanaryConfig   *CanaryConfig `json:"canary_config,omitempty"`
-	ABTestConfig   *ABTestConfig `json:"ab_test_config,omitempty"`
+	Type            string              `json:"type"` // rolling, recreate, bluegreen, canary, abtest
+	MaxUnavailable  int32               `json:"max_unavailable,omitempty"`
+	MaxSurge        int32               `json:"max_surge,omitempty"`
+	CanaryConfig    *CanaryConfig       `json:"canary_config,omitempty"`
+	ABTestConfig    *ABTestConfig       `json:"ab_test_config,omitempty"`
+	BlueGreenConfig *BlueGreenConfig    `json:"blue_green_config,omitempty"`
+	AutoRollback    *AutoRollbackConfig `json:"auto_rollback,omitempty"`
 }
 
 // WorkloadStatus represents the current observed state of a workload.
