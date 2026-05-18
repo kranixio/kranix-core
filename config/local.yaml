@@ -49,3 +49,14 @@ prediction:
 multitenancy:
   enabled: true
   default_isolation: true
+
+# Hard aggregate limits per kubernetes namespace OR team (label kranix.io/team or tenant id).
+resource_quota:
+  hard_limits:
+    # - namespace: team-a-ns
+    #   max_cpu_requests: "8"
+    #   max_memory_requests: 16Gi
+    #   max_workloads: 50
+    #   max_replicas_total: 200
+    # - team_id: platform
+    #   max_workloads: 100

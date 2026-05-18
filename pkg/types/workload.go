@@ -44,6 +44,8 @@ type WorkloadSpec struct {
 	HealthGate        *HealthGateConfig     `json:"health_gate,omitempty"`
 	// CrossNamespaceTraffic configures allowed namespace-to-namespace Kubernetes traffic when enforced by runtime drivers (e.g. NetworkPolicy).
 	CrossNamespaceTraffic *CrossNamespaceTrafficPolicy `json:"cross_namespace_traffic,omitempty"`
+	// CronSchedule enables cron-style triggering; when unset the workload follows continuous reconciliation.
+	CronSchedule *CronScheduleSpec `json:"cron_schedule,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -105,9 +107,23 @@ type WorkloadStatus struct {
 	Phase             WorkloadPhase `json:"phase"`
 	Replicas          int32         `json:"replicas"`
 	AvailableReplicas int32         `json:"available_replicas"`
-	ReadyReplicas     int32         `json:"ready_replicas"`
-	Message           string        `json:"message,omitempty"`
-	LastTransition    time.Time     `json:"last_transition"`
+	ReadyReplicas     int32                `json:"ready_replicas"`
+	Message           string               `json:"message,omitempty"`
+	LastTransition    time.Time            `json:"last_transition"`
+	Cron              *CronScheduleStatus  `json:"cron,omitempty"`
+}
+
+// CronScheduleSpec defines optional periodic execution (standard 5-field cron, e.g. "0 * * * *").
+type CronScheduleSpec struct {
+	Schedule            string `json:"schedule"`
+	Suspended           bool   `json:"suspended,omitempty"`
+	TimeZone            string `json:"time_zone,omitempty"` // IANA zone, e.g. "UTC", "America/New_York"
+	ConcurrencyPolicy   string `json:"concurrency_policy,omitempty"` // Allow | Forbid | Replace (Kubernetes semantics)
+}
+
+// CronScheduleStatus records the last cron evaluation trigger in core.
+type CronScheduleStatus struct {
+	LastScheduleTime *time.Time `json:"last_schedule_time,omitempty"`
 }
 
 // WorkloadPhase represents the lifecycle phase of a workload.

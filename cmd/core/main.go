@@ -15,7 +15,9 @@ import (
 	"github.com/kranix-io/kranix-core/internal/eventsourcing"
 	"github.com/kranix-io/kranix-core/internal/healthgate"
 	"github.com/kranix-io/kranix-core/internal/plugin"
+	"github.com/kranix-io/kranix-core/internal/cronsched"
 	"github.com/kranix-io/kranix-core/internal/policy"
+	"github.com/kranix-io/kranix-core/internal/resourcequota"
 	"github.com/kranix-io/kranix-core/internal/reconciler"
 	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
@@ -58,6 +60,9 @@ type Config struct {
 		DefaultTimeout time.Duration `yaml:"default_timeout"`
 		CheckInterval  time.Duration `yaml:"check_interval"`
 	} `yaml:"health_gate"`
+	ResourceQuota struct {
+		HardLimits []types.HardResourceQuota `yaml:"hard_limits"`
+	} `yaml:"resource_quota"`
 }
 
 func main() {
@@ -131,7 +136,11 @@ func main() {
 		DefaultMemoryLimit:        config.Policy.DefaultMemoryLimit,
 		EnforceNamespaceIsolation: config.Policy.EnforceNamespaceIsolation,
 	})
-	_ = policyEngine // TODO: integrate policy engine into reconciler
+	var quotaEngine *resourcequota.Engine
+	if len(config.ResourceQuota.HardLimits) > 0 {
+		quotaEngine = resourcequota.New(store, config.ResourceQuota.HardLimits)
+	}
+	cronEval := &cronsched.Evaluator{}
 
 	// Initialize drift detector
 	var driftDetector *drift.Detector
@@ -161,6 +170,11 @@ func main() {
 		rolloutManager,
 		autoscalerEngine,
 		driftDetector,
+		reconciler.Deps{
+			Policy: policyEngine,
+			Quota:  quotaEngine,
+			Cron:   cronEval,
+		},
 	)
 
 	// Setup context with cancellation

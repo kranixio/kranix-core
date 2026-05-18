@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
+	"github.com/kranix-io/kranix-core/internal/quotaaggregate"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/pkg/types"
+	core "k8s.io/apimachinery/pkg/api/resource"
 )
 
 // Engine manages multi-tenancy with hard isolation between organizations.
@@ -140,6 +143,51 @@ func (e *Engine) EnforceQuota(ctx context.Context, workload *types.Workload) err
 			if tenant.ResourceUsage.CustomMetricCount+metricCount > tenant.Quota.MaxCustomMetrics {
 				return fmt.Errorf("tenant %s would exceed custom metric limit (%d)", 
 					workload.Tenant.ID, tenant.Quota.MaxCustomMetrics)
+			}
+		}
+	}
+
+	// Aggregate CPU / memory requests across all workloads for this tenant when hard limits are configured.
+	if strings.TrimSpace(tenant.Quota.MaxCPU) != "" || strings.TrimSpace(tenant.Quota.MaxMemory) != "" {
+		teamWorkloads, err := e.GetTenantWorkloads(ctx, workload.Tenant.ID)
+		if err != nil {
+			return fmt.Errorf("tenant quota list workloads: %w", err)
+		}
+		cpuPeers, memPeers, _, _, err := quotaaggregate.SumRequests(teamWorkloads, workload.ID)
+		if err != nil {
+			return fmt.Errorf("tenant quota aggregate resources: %w", err)
+		}
+		cpuDelta, err := quotaaggregate.ParseCPU(workload.Spec.Resources.CPURequest)
+		if err != nil {
+			return err
+		}
+		memDelta, err := quotaaggregate.ParseMemory(workload.Spec.Resources.MemoryRequest)
+		if err != nil {
+			return err
+		}
+		cpuSum := cpuPeers.DeepCopy()
+		cpuSum.Add(cpuDelta)
+		memSum := memPeers.DeepCopy()
+		memSum.Add(memDelta)
+
+		if s := tenant.Quota.MaxCPU; strings.TrimSpace(s) != "" {
+			capQ, err := core.ParseQuantity(s)
+			if err != nil {
+				return fmt.Errorf("tenant %s invalid MaxCPU quota: %w", workload.Tenant.ID, err)
+			}
+			if cpuSum.Cmp(capQ) > 0 {
+				return fmt.Errorf("tenant %s would exceed CPU request quota %s (requests would total %s)",
+					workload.Tenant.ID, capQ.String(), cpuSum.String())
+			}
+		}
+		if s := tenant.Quota.MaxMemory; strings.TrimSpace(s) != "" {
+			capQ, err := core.ParseQuantity(s)
+			if err != nil {
+				return fmt.Errorf("tenant %s invalid MaxMemory quota: %w", workload.Tenant.ID, err)
+			}
+			if memSum.Cmp(capQ) > 0 {
+				return fmt.Errorf("tenant %s would exceed memory request quota %s (requests would total %s)",
+					workload.Tenant.ID, capQ.String(), memSum.String())
 			}
 		}
 	}

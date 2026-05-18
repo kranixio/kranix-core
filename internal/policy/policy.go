@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kranix-io/kranix-core/internal/cronsched"
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
 
@@ -53,6 +54,12 @@ func (e *Engine) Validate(workload *types.Workload) error {
 		p := strings.ToLower(strings.TrimSpace(workload.Spec.Scheduling.WorkloadPriority))
 		if _, ok := allowedWorkloadPriorities[p]; !ok {
 			return fmt.Errorf("unsupported workload_priority %q (use critical|high|normal|low)", workload.Spec.Scheduling.WorkloadPriority)
+		}
+	}
+
+	if workload.Spec.CronSchedule != nil {
+		if err := cronsched.Validate(workload.Spec.CronSchedule); err != nil {
+			return fmt.Errorf("cron_schedule: %w", err)
 		}
 	}
 

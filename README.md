@@ -12,7 +12,8 @@
 - Runs continuous reconciliation loops (Git intent → runtime state)
 - Schedules and coordinates deployments across backends
 - Routes events between the API layer and runtime drivers
-- Enforces infra policies (resource limits, namespace isolation, rollout rules)
+- Enforces infra policies (resource limits, namespace isolation, rollout rules, **workload priority** tiers, optional **cron** gates, **aggregate resource quotas** per namespace/team)
+- Carries **cross-namespace traffic** and **spot / preemption** hints on the workload model for Kubernetes runtimes
 - Provides the plugin interface for extending Kranix with custom controllers
 
 ## Architecture position
@@ -53,6 +54,16 @@ Every managed unit is a `Workload` object with:
 - `status` — current observed state (running, degraded, crashed)
 - `history` — immutable log of all state transitions
 
+Optional **`spec.cron_schedule`** enables **cron-style scheduling** inside the reconciler (standard five-field cron, optional IANA `time_zone`, optional `concurrency_policy` aligned with Kubernetes: allow / forbid / replace). When a schedule is active and due, core may emit **`WorkloadCronTriggered`** before **`WorkloadScheduled`**. With **`concurrency_policy: forbid`**, the controller does not trigger another schedule tick while the workload phase is **`Running`** or **`Degraded`**.
+
+Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_quota.hard_limits`** caps total CPU/memory *requests*, workload count, and replica count **per Kubernetes namespace** or **per team** (label `kranix.io/team`, or tenant id when keyed by team). The multitenancy engine also enforces tenant **`quota.maxCPU` / `maxMemory`** against summed requests across workloads in that tenant when those fields are set.
+
+**Scheduling (priority & preemption):** **`spec.scheduling.workload_priority`** must be one of **`critical`**, **`high`**, **`normal`**, **`low`** (validated in policy). The scheduler uses **`WorkloadSchedulingRank`** so higher tiers reconcile first. **`preemption_enabled`** and **`priority_class_name`** are carried on the workload for **`kranix-runtime`** to map to Kubernetes **PriorityClasses** (clusters must install classes such as `kranix-critical` / `kranix-critical-np` as used by the driver).
+
+**Spot / preemptible:** **`spec.scheduling.spot`** (**`enabled`**, **`reschedule_on_node_termination`**) is passed through for the Kubernetes backend to merge spot **tolerations** and tighter eviction behavior.
+
+**Cross-namespace traffic:** **`spec.cross_namespace_traffic`** records which peer namespaces may exchange traffic when the runtime applies **NetworkPolicy** (ingress/egress allow lists, DNS, optional internet egress).
+
 ### Event bus
 
 Internal components communicate via a typed event bus. Events flow:
@@ -74,7 +85,10 @@ API receives request
 kranix-core/
 ├── cmd/                  # Entry point (if running standalone)
 ├── internal/
-│   ├── reconciler/       # Main reconciliation loop
+│   ├── reconciler/       # Main reconciliation loop (policy, quota, cron gates)
+│   ├── cronsched/        # Cron schedule evaluation for workloads
+│   ├── resourcequota/    # Hard limits per namespace or team label
+│   ├── quotaaggregate/   # CPU/memory request aggregates for quotas
 │   ├── scheduler/        # Workload placement logic
 │   ├── policy/           # Policy engine (limits, rules)
 │   └── plugin/           # Plugin/controller extension interface
@@ -164,7 +178,20 @@ prediction:
 multitenancy:
   enabled: true
   default_isolation: true
+
+# Optional: hard aggregate limits per namespace OR per team (label kranix.io/team / tenant id).
+resource_quota:
+  hard_limits:
+    # - namespace: team-a-ns
+    #   max_cpu_requests: "8"
+    #   max_memory_requests: "16Gi"
+    #   max_workloads: 50
+    #   max_replicas_total: 200
+    # - team_id: platform
+    #   max_workloads: 100
 ```
+
+The reconciler loads **policy**, **cron evaluation**, and (when `hard_limits` is non-empty) the **quota** engine from [`cmd/core/main.go`](./cmd/core/main.go).
 
 ---
 
@@ -410,6 +437,7 @@ Event types recorded:
 - `WorkloadDriftDetected` - Drift detection events
 - `WorkloadDriftReconciled` - Auto-reconciliation events
 - `WorkloadScaled` - Scaling events with reason
+- `WorkloadCronTriggered` - Cron schedule fired before a scheduled rollout tick
 
 API Endpoints (via kranix-api):
 - `GET /api/v1/workloads/{id}/events` - Retrieve event history for a workload
@@ -505,13 +533,6 @@ Health check types supported:
 API Endpoints (via kranix-api):
 - `GET /api/v1/workloads/{id}/health` - Retrieve health gate status
 - `POST /api/v1/workloads/{id}/health/evaluate` - Manually trigger health gate evaluation
-
----
-
-## Configuration
-
-`kranix-core` is configured via YAML:
-```
 
 ---
 

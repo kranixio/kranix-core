@@ -8,6 +8,8 @@ const (
 	WorkloadDeployRequested EventType = "WorkloadDeployRequested"
 	// WorkloadScheduled is emitted when the scheduler assigns a workload
 	WorkloadScheduled EventType = "WorkloadScheduled"
+	// WorkloadCronTriggered is emitted when a cron-defined workload triggers the scheduler run.
+	WorkloadCronTriggered EventType = "WorkloadCronTriggered"
 	// WorkloadRunning is emitted when a workload is successfully running
 	WorkloadRunning EventType = "WorkloadRunning"
 	// WorkloadFailed is emitted when a workload fails
