@@ -2,9 +2,18 @@ package policy
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
+
+var allowedWorkloadPriorities = map[string]struct{}{
+	string(types.WorkloadPriorityCritical): {},
+	string(types.WorkloadPriorityHigh):     {},
+	string(types.WorkloadPriorityNormal):   {},
+	string(types.WorkloadPriorityLow):      {},
+	"":                                     {},
+}
 
 // Engine enforces infrastructure policies on workloads.
 type Engine struct {
@@ -38,6 +47,13 @@ func (e *Engine) Validate(workload *types.Workload) error {
 	}
 	if workload.Spec.Resources.MemoryLimit == "" {
 		workload.Spec.Resources.MemoryLimit = e.config.DefaultMemoryLimit
+	}
+
+	if workload.Spec.Scheduling != nil && workload.Spec.Scheduling.WorkloadPriority != "" {
+		p := strings.ToLower(strings.TrimSpace(workload.Spec.Scheduling.WorkloadPriority))
+		if _, ok := allowedWorkloadPriorities[p]; !ok {
+			return fmt.Errorf("unsupported workload_priority %q (use critical|high|normal|low)", workload.Spec.Scheduling.WorkloadPriority)
+		}
 	}
 
 	return nil

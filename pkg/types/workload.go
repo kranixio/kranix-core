@@ -42,6 +42,8 @@ type WorkloadSpec struct {
 	FailurePrediction *FailurePrediction    `json:"failure_prediction,omitempty"`
 	DriftDetection    *DriftDetectionConfig `json:"drift_detection,omitempty"`
 	HealthGate        *HealthGateConfig     `json:"health_gate,omitempty"`
+	// CrossNamespaceTraffic configures allowed namespace-to-namespace Kubernetes traffic when enforced by runtime drivers (e.g. NetworkPolicy).
+	CrossNamespaceTraffic *CrossNamespaceTrafficPolicy `json:"cross_namespace_traffic,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -164,6 +166,45 @@ type SchedulingConfig struct {
 	Affinity         *AffinityConfig   `json:"affinity,omitempty"`
 	Tolerations      []Toleration      `json:"tolerations,omitempty"`
 	MaxCostPerHour   string            `json:"max_cost_per_hour,omitempty"`
+	// WorkloadPriority is coarse priority: critical, high, normal, low.
+	WorkloadPriority string `json:"workload_priority,omitempty"`
+	// PreemptionEnabled requests Kubernetes PriorityClasses that use PreemptLowerPriority (clusters must provision matching classes).
+	PreemptionEnabled bool `json:"preemption_enabled,omitempty"`
+	// PriorityClassName overrides automatic mapping from WorkloadPriority when set.
+	PriorityClassName string `json:"priority_class_name,omitempty"`
+	// Spot configures spot / preemptible node placement behavior.
+	Spot *SpotWorkloadConfig `json:"spot,omitempty"`
+}
+
+// WorkloadPriority values for WorkloadSchedulingRank and Kubernetes mappings.
+type WorkloadPriority string
+
+const (
+	WorkloadPriorityCritical WorkloadPriority = "critical"
+	WorkloadPriorityHigh     WorkloadPriority = "high"
+	WorkloadPriorityNormal   WorkloadPriority = "normal"
+	WorkloadPriorityLow      WorkloadPriority = "low"
+)
+
+// SpotWorkloadConfig enables cheaper interruptible nodes and faster reschedule when capacity is revoked.
+type SpotWorkloadConfig struct {
+	Enabled                     bool `json:"enabled,omitempty"`
+	RescheduleOnNodeTermination bool `json:"reschedule_on_node_termination,omitempty"`
+}
+
+// CrossNamespaceTrafficPolicy restricts which namespaces may send or receive workload traffic when networking policies are enforced.
+type CrossNamespaceTrafficPolicy struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// AllowedIngressNamespaces are namespaces whose pods may call into this workload.
+	AllowedIngressNamespaces []string `json:"allowed_ingress_namespaces,omitempty"`
+	// AllowedEgressNamespaces are namespaces this workload may connect to (pod traffic).
+	AllowedEgressNamespaces []string `json:"allowed_egress_namespaces,omitempty"`
+	// AllowSameNamespace retains intra-namespace flows (recommended).
+	AllowSameNamespace *bool `json:"allow_same_namespace,omitempty"`
+	// BlockClusterDNS opts out of the automatic kube-system DNS egress peers (advanced).
+	BlockClusterDNS bool `json:"block_cluster_dns,omitempty"`
+	// AllowEgressInternet permits broad TCP egress (80/443) for external dependencies.
+	AllowEgressInternet bool `json:"allow_egress_internet,omitempty"`
 }
 
 // AffinityConfig defines pod affinity/anti-affinity rules.

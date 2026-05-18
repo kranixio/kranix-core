@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/kranix-io/kranix-core/internal/autoscaler"
@@ -95,6 +96,10 @@ func (e *Engine) reconcileAll(ctx context.Context) {
 		log.Printf("Failed to list workloads: %v", err)
 		return
 	}
+
+	sort.SliceStable(workloads, func(i, j int) bool {
+		return scheduler.WorkloadSchedulingRank(workloads[i]) > scheduler.WorkloadSchedulingRank(workloads[j])
+	})
 
 	for _, workload := range workloads {
 		if err := e.reconcileOne(ctx, workload); err != nil {
