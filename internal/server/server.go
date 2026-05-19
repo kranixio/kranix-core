@@ -17,7 +17,9 @@ import (
 	"github.com/kranix-io/kranix-core/internal/secretrotation"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/internal/workloadfilter"
+	"github.com/kranix-io/kranix-core/internal/workloadpage"
 	"github.com/kranix-io/kranix-core/pkg/types"
+	"github.com/kranix-io/kranix-packages/pagination"
 )
 
 // Server exposes a REST API for workloads, bulk ops, audit history, and secret rotation.
@@ -187,9 +189,12 @@ func (s *Server) handleListWorkloads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filtered := workloadfilter.Filter(list, q)
+	pageParams := pagination.ParseParams(r.URL.Query().Get("limit"), r.URL.Query().Get("cursor"))
+	page, pageInfo := workloadpage.Paginate(filtered, pageParams)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workloads": filtered,
-		"count":     len(filtered),
+		"workloads": page,
+		"page_info": pageInfo,
+		"count":     len(page),
 		"query":     q,
 	})
 }
