@@ -72,6 +72,8 @@ Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_
 
 **Warm standby:** **`spec.warm_standby`** provisions a linked cold workload (`{id}-standby`, **0 replicas**) labeled **`kranix.io/role=standby`**. **`auto_promote`** (or **`warm_standby.default_auto_promote`**) scales the standby when the primary circuit opens, emitting **`WorkloadStandbyPromoted`**. Configure via **`warm_standby`** in [`config/local.yaml`](./config/local.yaml).
 
+**HTTP API** (when `http.enabled`): workload CRUD, **bulk** ops, **diff** (`GET/POST /workloads/{id}/diff`), **filtered list** (`GET /workloads?namespace=&phase=&image=&team=`), **namespace quotas** (`GET/PUT/DELETE /quotas/{namespace}`, `GET .../usage`), audit history, and secret rotation notify.
+
 **Secret rotation awareness:** Workloads declare **`spec.secret_rotation.secret_refs`**. When an external controller (e.g. **`KranixSecret`**) reports a new version via **`POST /api/v1/secrets/rotated`**, core marks dependents **`pending_restart`** and the reconciler issues a **rolling restart** (`WorkloadRestartRequested`). Enable with **`secret_rotation.enabled`** and the core HTTP API (`http.addr`, default **`:8081`**).
 
 ### Event bus

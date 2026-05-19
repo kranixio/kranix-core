@@ -4,15 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kranix-io/kranix-core/internal/diff"
 	"github.com/kranix-io/kranix-core/internal/eventsourcing"
+	"github.com/kranix-io/kranix-core/internal/resourcequota"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/secretrotation"
 	"github.com/kranix-io/kranix-core/internal/state"
+	"github.com/kranix-io/kranix-core/internal/workloadfilter"
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
 
@@ -22,11 +26,12 @@ type Server struct {
 	eventStore *eventsourcing.Store
 	sched      *scheduler.Scheduler
 	secrets    *secretrotation.Engine
+	quota      *resourcequota.Engine
 }
 
 // New creates an HTTP API server.
-func New(store state.Store, eventStore *eventsourcing.Store, sched *scheduler.Scheduler, secrets *secretrotation.Engine) *Server {
-	return &Server{store: store, eventStore: eventStore, sched: sched, secrets: secrets}
+func New(store state.Store, eventStore *eventsourcing.Store, sched *scheduler.Scheduler, secrets *secretrotation.Engine, quota *resourcequota.Engine) *Server {
+	return &Server{store: store, eventStore: eventStore, sched: sched, secrets: secrets, quota: quota}
 }
 
 // RegisterRoutes registers core REST handlers.
@@ -34,7 +39,14 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/workloads/bulk", s.handleBulkWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads", s.handleCreateWorkload)
 	mux.HandleFunc("GET /api/v1/workloads", s.handleListWorkloads)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/diff", s.handleWorkloadDiff)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/diff", s.handleWorkloadDiff)
 	mux.HandleFunc("GET /api/v1/workloads/{id}", s.handleGetWorkload)
+	mux.HandleFunc("GET /api/v1/quotas", s.handleListQuotas)
+	mux.HandleFunc("GET /api/v1/quotas/{namespace}/usage", s.handleQuotaUsage)
+	mux.HandleFunc("GET /api/v1/quotas/{namespace}", s.handleGetQuota)
+	mux.HandleFunc("PUT /api/v1/quotas/{namespace}", s.handlePutQuota)
+	mux.HandleFunc("DELETE /api/v1/quotas/{namespace}", s.handleDeleteQuota)
 	mux.HandleFunc("DELETE /api/v1/workloads/{id}", s.handleDeleteWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.handleRestartWorkload)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/events", s.handleWorkloadEvents)
@@ -168,13 +180,136 @@ func (s *Server) handleCreateWorkload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListWorkloads(w http.ResponseWriter, r *http.Request) {
-	ns := r.URL.Query().Get("namespace")
-	list, err := s.store.List(r.Context(), ns)
+	q := parseSearchQuery(r)
+	list, err := s.store.List(r.Context(), q.Namespace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	filtered := workloadfilter.Filter(list, q)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"workloads": filtered,
+		"count":     len(filtered),
+		"query":     q,
+	})
+}
+
+func parseSearchQuery(r *http.Request) workloadfilter.Query {
+	q := r.URL.Query()
+	return workloadfilter.Query{
+		Namespace:   q.Get("namespace"),
+		Phase:       q.Get("phase"),
+		Status:      q.Get("status"),
+		Image:       q.Get("image"),
+		Team:        firstNonEmpty(q.Get("team"), q.Get("tag.team")),
+		Environment: firstNonEmpty(q.Get("environment"), q.Get("tag.environment")),
+		CostCenter:  firstNonEmpty(q.Get("cost_center"), q.Get("costCenter"), q.Get("tag.cost_center")),
+		LabelKey:    q.Get("label"),
+		LabelValue:  q.Get("label_value"),
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func (s *Server) handleWorkloadDiff(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	wl, _ := s.store.Get(r.Context(), id)
+	if wl == nil {
+		writeError(w, http.StatusNotFound, "workload not found")
+		return
+	}
+	var proposed *types.WorkloadSpec
+	if r.Method == http.MethodPost {
+		raw, err := io.ReadAll(r.Body)
+		if err == nil && len(raw) > 0 {
+			var wrap struct {
+				Spec types.WorkloadSpec `json:"spec"`
+			}
+			if json.Unmarshal(raw, &wrap) == nil && wrap.Spec.Image != "" {
+				proposed = &wrap.Spec
+			} else {
+				var spec types.WorkloadSpec
+				if json.Unmarshal(raw, &spec) == nil {
+					proposed = &spec
+				}
+			}
+		}
+	}
+	result := diff.ComputeSpecVsLive(wl, proposed)
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleListQuotas(w http.ResponseWriter, r *http.Request) {
+	if s.quota == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"quotas": []types.HardResourceQuota{}, "count": 0})
+		return
+	}
+	quotas := s.quota.ListNamespaceQuotas()
+	writeJSON(w, http.StatusOK, map[string]interface{}{"quotas": quotas, "count": len(quotas)})
+}
+
+func (s *Server) handleGetQuota(w http.ResponseWriter, r *http.Request) {
+	if s.quota == nil {
+		writeError(w, http.StatusServiceUnavailable, "quota engine disabled")
+		return
+	}
+	ns := r.PathValue("namespace")
+	lim, ok := s.quota.GetNamespaceQuota(ns)
+	if !ok {
+		writeError(w, http.StatusNotFound, "quota not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, lim)
+}
+
+func (s *Server) handlePutQuota(w http.ResponseWriter, r *http.Request) {
+	if s.quota == nil {
+		writeError(w, http.StatusServiceUnavailable, "quota engine disabled")
+		return
+	}
+	var lim types.HardResourceQuota
+	if err := json.NewDecoder(r.Body).Decode(&lim); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	lim.Namespace = r.PathValue("namespace")
+	if err := s.quota.SetNamespaceQuota(lim); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, lim)
+}
+
+func (s *Server) handleDeleteQuota(w http.ResponseWriter, r *http.Request) {
+	if s.quota == nil {
+		writeError(w, http.StatusServiceUnavailable, "quota engine disabled")
+		return
+	}
+	if !s.quota.DeleteNamespaceQuota(r.PathValue("namespace")) {
+		writeError(w, http.StatusNotFound, "quota not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleQuotaUsage(w http.ResponseWriter, r *http.Request) {
+	if s.quota == nil {
+		writeError(w, http.StatusServiceUnavailable, "quota engine disabled")
+		return
+	}
+	usage, err := s.quota.NamespaceUsage(r.Context(), r.PathValue("namespace"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
 }
 
 func (s *Server) handleGetWorkload(w http.ResponseWriter, r *http.Request) {

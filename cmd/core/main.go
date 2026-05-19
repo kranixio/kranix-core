@@ -180,10 +180,7 @@ func main() {
 		RequireEnvironmentTag:     config.WorkloadTags.RequireEnvironment,
 		RequireCostCenterTag:      config.WorkloadTags.RequireCostCenter,
 	})
-	var quotaEngine *resourcequota.Engine
-	if len(config.ResourceQuota.HardLimits) > 0 {
-		quotaEngine = resourcequota.New(store, config.ResourceQuota.HardLimits)
-	}
+	quotaEngine := resourcequota.New(store, config.ResourceQuota.HardLimits)
 	cronEval := &cronsched.Evaluator{}
 
 	circuitEngine := circuitbreaker.New(circuitbreaker.Config{
@@ -252,7 +249,7 @@ func main() {
 		httpAddr = ":8081"
 	}
 	if httpEnabled {
-		apiServer := server.New(store, eventStore, sched, secretEngine)
+		apiServer := server.New(store, eventStore, sched, secretEngine, quotaEngine)
 		go func() {
 			log.Printf("Core HTTP API listening on %s", httpAddr)
 			if err := apiServer.ListenAndServe(httpAddr); err != nil {
