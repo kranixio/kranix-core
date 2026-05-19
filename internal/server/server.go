@@ -183,7 +183,11 @@ func (s *Server) handleCreateWorkload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListWorkloads(w http.ResponseWriter, r *http.Request) {
 	q := parseSearchQuery(r)
-	list, err := s.store.List(r.Context(), q.Namespace)
+	ns := q.Namespace
+	if q.AllNamespaces {
+		ns = ""
+	}
+	list, err := s.store.List(r.Context(), ns)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -201,8 +205,15 @@ func (s *Server) handleListWorkloads(w http.ResponseWriter, r *http.Request) {
 
 func parseSearchQuery(r *http.Request) workloadfilter.Query {
 	q := r.URL.Query()
+	allNS := queryFlagTrue(q, "all_namespaces", "allNamespaces", "cross_namespace", "crossNamespace")
+	ns := q.Get("namespace")
+	if allNS || ns == "*" {
+		allNS = true
+		ns = ""
+	}
 	return workloadfilter.Query{
-		Namespace:   q.Get("namespace"),
+		AllNamespaces: allNS,
+		Namespace:     ns,
 		Phase:       q.Get("phase"),
 		Status:      q.Get("status"),
 		Image:       q.Get("image"),
@@ -221,6 +232,20 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func queryFlagTrue(q map[string][]string, keys ...string) bool {
+	for _, k := range keys {
+		vals, ok := q[k]
+		if !ok || len(vals) == 0 {
+			continue
+		}
+		v := strings.ToLower(strings.TrimSpace(vals[0]))
+		if v == "true" || v == "1" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleWorkloadDiff(w http.ResponseWriter, r *http.Request) {

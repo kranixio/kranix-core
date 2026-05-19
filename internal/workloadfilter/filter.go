@@ -9,7 +9,8 @@ import (
 
 // Query mirrors search query parameters.
 type Query struct {
-	Namespace   string
+	AllNamespaces bool
+	Namespace     string
 	Phase       string
 	Status      string
 	Image       string
@@ -25,8 +26,10 @@ func Match(w *types.Workload, q Query) bool {
 	if w == nil {
 		return false
 	}
-	if ns := strings.TrimSpace(q.Namespace); ns != "" && !strings.EqualFold(w.Namespace, ns) {
-		return false
+	if !q.AllNamespaces {
+		if ns := strings.TrimSpace(q.Namespace); ns != "" && !strings.EqualFold(w.Namespace, ns) {
+			return false
+		}
 	}
 	phase := strings.TrimSpace(q.Phase)
 	if phase == "" {
