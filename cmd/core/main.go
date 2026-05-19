@@ -22,6 +22,8 @@ import (
 	"github.com/kranix-io/kranix-core/internal/reconciler"
 	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
+	"github.com/kranix-io/kranix-core/internal/secretrotation"
+	"github.com/kranix-io/kranix-core/internal/server"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/internal/warmstandby"
 	"github.com/kranix-io/kranix-core/pkg/types"
@@ -86,6 +88,13 @@ type Config struct {
 		DefaultStandbyReplicas int32 `yaml:"default_standby_replicas"`
 		DefaultAutoPromote     bool  `yaml:"default_auto_promote"`
 	} `yaml:"warm_standby"`
+	SecretRotation struct {
+		Enabled bool `yaml:"enabled"`
+	} `yaml:"secret_rotation"`
+	HTTP struct {
+		Enabled bool   `yaml:"enabled"`
+		Addr    string `yaml:"addr"`
+	} `yaml:"http"`
 }
 
 func main() {
@@ -100,6 +109,7 @@ func main() {
 
 	// Initialize components
 	eventBus := eventbus.New(config.EventBus.BufferSize)
+	var eventStore *eventsourcing.Store
 
 	// Initialize state store based on backend configuration
 	var store state.Store
@@ -126,7 +136,7 @@ func main() {
 		fallthrough
 	default:
 		// Initialize event sourcing store for memory backend
-		eventStore := eventsourcing.New(eventsourcing.Config{
+		eventStore = eventsourcing.New(eventsourcing.Config{
 			Enabled:        config.EventSourcing.Enabled,
 			StorageBackend: config.EventSourcing.StorageBackend,
 			MaxEventAge:    config.EventSourcing.MaxEventAge,
@@ -189,6 +199,15 @@ func main() {
 		DefaultAutoPromote:     config.WarmStandby.DefaultAutoPromote,
 	}, circuitEngine)
 
+	secretRegistry := secretrotation.NewRegistry()
+	secretEngine := secretrotation.New(
+		secretrotation.Config{Enabled: config.SecretRotation.Enabled},
+		secretRegistry,
+		store,
+		eventStore,
+		eventBus,
+	)
+
 	// Initialize drift detector
 	var driftDetector *drift.Detector
 	if config.DriftDetection.Enabled {
@@ -223,8 +242,24 @@ func main() {
 			Cron:    cronEval,
 			Circuit: circuitEngine,
 			Standby: standbyManager,
+			Secrets: secretEngine,
 		},
 	)
+
+	httpEnabled := config.HTTP.Enabled
+	httpAddr := config.HTTP.Addr
+	if httpAddr == "" {
+		httpAddr = ":8081"
+	}
+	if httpEnabled {
+		apiServer := server.New(store, eventStore, sched, secretEngine)
+		go func() {
+			log.Printf("Core HTTP API listening on %s", httpAddr)
+			if err := apiServer.ListenAndServe(httpAddr); err != nil {
+				log.Printf("Core HTTP server stopped: %v", err)
+			}
+		}()
+	}
 
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())

@@ -55,6 +55,8 @@ type WorkloadSpec struct {
 	CircuitBreaker *CircuitBreakerSpec `json:"circuit_breaker,omitempty"`
 	// WarmStandby provisions a cold replica workload for fast failover.
 	WarmStandby *WarmStandbySpec `json:"warm_standby,omitempty"`
+	// SecretRotation triggers rolling restarts when referenced secrets change.
+	SecretRotation *SecretRotationSpec `json:"secret_rotation,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -123,6 +125,8 @@ type WorkloadStatus struct {
 	Rollback          *RollbackHistoryStatus `json:"rollback,omitempty"`
 	CircuitBreaker    *CircuitBreakerStatus  `json:"circuit_breaker,omitempty"`
 	WarmStandby       *WarmStandbyStatus     `json:"warm_standby,omitempty"`
+	SecretRotation    *SecretRotationStatus  `json:"secret_rotation,omitempty"`
+	RestartGeneration int32                  `json:"restart_generation,omitempty"`
 }
 
 // CronScheduleSpec defines optional periodic execution (standard 5-field cron, e.g. "0 * * * *").

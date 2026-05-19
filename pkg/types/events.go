@@ -24,6 +24,10 @@ const (
 	WorkloadCircuitClosed EventType = "WorkloadCircuitClosed"
 	// WorkloadStandbyPromoted is emitted when warm standby assumes traffic
 	WorkloadStandbyPromoted EventType = "WorkloadStandbyPromoted"
+	// WorkloadSecretRotated is emitted when a linked secret version changes
+	WorkloadSecretRotated EventType = "WorkloadSecretRotated"
+	// WorkloadRestartRequested is emitted when a rolling restart is triggered
+	WorkloadRestartRequested EventType = "WorkloadRestartRequested"
 	// WorkloadDeleted is emitted when a workload is deleted
 	WorkloadDeleted EventType = "WorkloadDeleted"
 	// WorkloadScaled is emitted when auto-scaling changes replica count
@@ -70,6 +74,8 @@ type RuntimeDriver interface {
 	Delete(ctx interface{}, workloadID string) error
 	// GetStatus retrieves the current status of a workload
 	GetStatus(ctx interface{}, workloadID string) (*WorkloadStatus, error)
+	// Restart performs a rolling restart of a running workload (optional for drivers).
+	Restart(ctx interface{}, workload *Workload) error
 	// Name returns the name of the runtime driver
 	Name() string
 }

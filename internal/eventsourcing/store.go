@@ -314,6 +314,60 @@ func (s *Store) GetWorkloadHistory(ctx context.Context, workloadID string) ([]*t
 	return s.GetEvents(ctx, workloadID, 0, 0)
 }
 
+// RecordSecretRotated records a secret rotation event for a workload.
+func (s *Store) RecordSecretRotated(ctx context.Context, workload *types.Workload, secretName, version string) error {
+	return s.Append(ctx, &types.DomainEvent{
+		Aggregate:     workload.ID,
+		AggregateType: "workload",
+		Type:          "WorkloadSecretRotated",
+		Data: map[string]interface{}{
+			"workload_id":    workload.ID,
+			"secret_name":    secretName,
+			"secret_version": version,
+			"namespace":      workload.Namespace,
+		},
+		Metadata: map[string]string{
+			"namespace": workload.Namespace,
+		},
+	})
+}
+
+// RecordWorkloadRestarted records a rolling restart triggered by secret rotation or operator action.
+func (s *Store) RecordWorkloadRestarted(ctx context.Context, workload *types.Workload, reason string) error {
+	return s.Append(ctx, &types.DomainEvent{
+		Aggregate:     workload.ID,
+		AggregateType: "workload",
+		Type:          "WorkloadRestarted",
+		Data: map[string]interface{}{
+			"workload_id":         workload.ID,
+			"reason":              reason,
+			"restart_generation":  workload.Status.RestartGeneration,
+			"namespace":           workload.Namespace,
+		},
+		Metadata: map[string]string{
+			"namespace": workload.Namespace,
+		},
+	})
+}
+
+// ListByResourceType returns events for all aggregates of a given type (best-effort scan).
+func (s *Store) ListByResourceType(ctx context.Context, aggregateType string, limit int) ([]*types.DomainEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*types.DomainEvent
+	for _, events := range s.events {
+		for _, ev := range events {
+			if ev.AggregateType == aggregateType {
+				out = append(out, ev)
+				if limit > 0 && len(out) >= limit {
+					return out, nil
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
 // CleanupOldEvents removes events older than maxEventAge.
 func (s *Store) CleanupOldEvents(ctx context.Context) error {
 	if s.config.MaxEventAge <= 0 {

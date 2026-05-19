@@ -16,6 +16,7 @@ import (
 	"github.com/kranix-io/kranix-core/internal/resourcequota"
 	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
+	"github.com/kranix-io/kranix-core/internal/secretrotation"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/internal/warmstandby"
 	"github.com/kranix-io/kranix-core/pkg/types"
@@ -32,8 +33,9 @@ type Deps struct {
 	Policy  *policy.Engine
 	Quota   *resourcequota.Engine
 	Cron    *cronsched.Evaluator // when nil, no cron gating (continuous scheduling)
-	Circuit *circuitbreaker.Engine
-	Standby *warmstandby.Manager
+	Circuit  *circuitbreaker.Engine
+	Standby  *warmstandby.Manager
+	Secrets  *secretrotation.Engine
 }
 
 // Engine manages the main reconciliation loop.
@@ -180,6 +182,25 @@ func (e *Engine) reconcileOne(ctx context.Context, workload *types.Workload) err
 		workload.Status.Phase == types.WorkloadPhaseRunning {
 		if err := e.deps.Standby.EnsureColdStandby(ctx, e.store, workload); err != nil {
 			log.Printf("Ensure cold standby failed for %s: %v", workload.ID, err)
+		}
+	}
+
+	if e.deps.Secrets != nil {
+		e.deps.Secrets.IndexWorkload(workload)
+		if workload.Status.SecretRotation != nil && workload.Status.SecretRotation.PendingRestart &&
+			workload.Status.Phase == types.WorkloadPhaseRunning {
+			if err := e.scheduler.RequestRollingRestart(ctx, workload); err != nil {
+				log.Printf("Secret rotation rolling restart failed for %s: %v", workload.ID, err)
+			} else {
+				workload.Status.SecretRotation.PendingRestart = false
+				workload.Status.SecretRotation.RestartCount++
+				workload.Status.SecretRotation.Message = "rolling restart completed after secret rotation"
+				_ = e.store.Update(ctx, workload)
+				e.eventBus.PublishAsync(types.Event{
+					Type:     types.WorkloadRestartRequested,
+					Workload: workload,
+				})
+			}
 		}
 	}
 

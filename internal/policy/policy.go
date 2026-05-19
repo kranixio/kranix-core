@@ -86,6 +86,16 @@ func (e *Engine) Validate(workload *types.Workload) error {
 			return fmt.Errorf("warm_standby.replicas must be non-negative")
 		}
 	}
+	if sr := workload.Spec.SecretRotation; sr != nil && sr.Enabled {
+		if len(sr.SecretRefs) == 0 {
+			return fmt.Errorf("secret_rotation.secret_refs required when enabled")
+		}
+		for _, ref := range sr.SecretRefs {
+			if strings.TrimSpace(ref.Name) == "" {
+				return fmt.Errorf("secret_rotation.secret_refs.name is required")
+			}
+		}
+	}
 
 	workloadtags.SyncFromLabels(workload)
 	if e.config.RequireTeamTag && workloadtags.Team(workload) == "" {

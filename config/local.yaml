@@ -72,6 +72,13 @@ warm_standby:
   default_standby_replicas: 1
   default_auto_promote: false
 
+secret_rotation:
+  enabled: true
+
+http:
+  enabled: true
+  addr: ":8081"
+
 resource_quota:
   hard_limits:
     # - namespace: team-a-ns
