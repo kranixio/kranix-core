@@ -60,6 +60,18 @@ workload_tags:
   require_environment: false
   require_cost_center: false
 
+circuit_breaker:
+  enabled: true
+  default_failure_threshold: 3
+  default_success_threshold: 2
+  default_open_duration_seconds: 60
+  default_half_open_max_requests: 1
+
+warm_standby:
+  enabled: false
+  default_standby_replicas: 1
+  default_auto_promote: false
+
 resource_quota:
   hard_limits:
     # - namespace: team-a-ns

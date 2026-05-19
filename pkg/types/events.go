@@ -18,6 +18,12 @@ const (
 	WorkloadUpdated EventType = "WorkloadUpdated"
 	// WorkloadRolledBack is emitted when a workload spec is reverted to a prior revision
 	WorkloadRolledBack EventType = "WorkloadRolledBack"
+	// WorkloadCircuitOpen is emitted when routing to a workload is suspended
+	WorkloadCircuitOpen EventType = "WorkloadCircuitOpen"
+	// WorkloadCircuitClosed is emitted when routing to a workload resumes
+	WorkloadCircuitClosed EventType = "WorkloadCircuitClosed"
+	// WorkloadStandbyPromoted is emitted when warm standby assumes traffic
+	WorkloadStandbyPromoted EventType = "WorkloadStandbyPromoted"
 	// WorkloadDeleted is emitted when a workload is deleted
 	WorkloadDeleted EventType = "WorkloadDeleted"
 	// WorkloadScaled is emitted when auto-scaling changes replica count

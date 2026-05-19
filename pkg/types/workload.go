@@ -51,6 +51,10 @@ type WorkloadSpec struct {
 	CrossNamespaceTraffic *CrossNamespaceTrafficPolicy `json:"cross_namespace_traffic,omitempty"`
 	// CronSchedule enables cron-style triggering; when unset the workload follows continuous reconciliation.
 	CronSchedule *CronScheduleSpec `json:"cron_schedule,omitempty"`
+	// CircuitBreaker stops routing while unhealthy or when the circuit is open.
+	CircuitBreaker *CircuitBreakerSpec `json:"circuit_breaker,omitempty"`
+	// WarmStandby provisions a cold replica workload for fast failover.
+	WarmStandby *WarmStandbySpec `json:"warm_standby,omitempty"`
 }
 
 // ResourceRequirements defines compute resource requests and limits.
@@ -117,6 +121,8 @@ type WorkloadStatus struct {
 	LastTransition    time.Time            `json:"last_transition"`
 	Cron              *CronScheduleStatus  `json:"cron,omitempty"`
 	Rollback          *RollbackHistoryStatus `json:"rollback,omitempty"`
+	CircuitBreaker    *CircuitBreakerStatus  `json:"circuit_breaker,omitempty"`
+	WarmStandby       *WarmStandbyStatus     `json:"warm_standby,omitempty"`
 }
 
 // CronScheduleSpec defines optional periodic execution (standard 5-field cron, e.g. "0 * * * *").

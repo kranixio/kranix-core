@@ -67,6 +67,26 @@ func (e *Engine) Validate(workload *types.Workload) error {
 		}
 	}
 
+	if cb := workload.Spec.CircuitBreaker; cb != nil && cb.Enabled {
+		if cb.FailureThreshold < 0 {
+			return fmt.Errorf("circuit_breaker.failure_threshold must be non-negative")
+		}
+		if cb.SuccessThreshold < 0 {
+			return fmt.Errorf("circuit_breaker.success_threshold must be non-negative")
+		}
+		if cb.OpenDurationSeconds < 0 {
+			return fmt.Errorf("circuit_breaker.open_duration_seconds must be non-negative")
+		}
+		if cb.HalfOpenMaxRequests < 0 {
+			return fmt.Errorf("circuit_breaker.half_open_max_requests must be non-negative")
+		}
+	}
+	if ws := workload.Spec.WarmStandby; ws != nil && ws.Enabled {
+		if ws.Replicas < 0 {
+			return fmt.Errorf("warm_standby.replicas must be non-negative")
+		}
+	}
+
 	workloadtags.SyncFromLabels(workload)
 	if e.config.RequireTeamTag && workloadtags.Team(workload) == "" {
 		return fmt.Errorf("tags.team (or label %s) is required", types.LabelKeyTeam)

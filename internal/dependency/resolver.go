@@ -6,20 +6,24 @@ import (
 	"log"
 	"time"
 
+	"github.com/kranix-io/kranix-core/internal/circuitbreaker"
 	"github.com/kranix-io/kranix-core/internal/state"
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
 
 // Resolver handles dependency resolution for workloads.
 type Resolver struct {
-	store state.Store
+	store    state.Store
+	circuits *circuitbreaker.Engine
 }
 
 // New creates a new dependency resolver.
-func New(store state.Store) *Resolver {
-	return &Resolver{
-		store: store,
+func New(store state.Store, circuits ...*circuitbreaker.Engine) *Resolver {
+	r := &Resolver{store: store}
+	if len(circuits) > 0 {
+		r.circuits = circuits[0]
 	}
+	return r
 }
 
 // ResolveDeploymentOrder determines the correct deployment order for workloads based on dependencies.
@@ -75,6 +79,10 @@ func (r *Resolver) checkDependency(ctx context.Context, dep types.Dependency) (b
 	depWorkload, err := r.store.Get(ctx, dep.WorkloadID)
 	if err != nil {
 		// Dependency workload doesn't exist
+		return false, nil
+	}
+
+	if r.circuits != nil && !r.circuits.AllowRoute(depWorkload, time.Now()) {
 		return false, nil
 	}
 

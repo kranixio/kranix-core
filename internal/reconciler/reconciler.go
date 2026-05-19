@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kranix-io/kranix-core/internal/autoscaler"
+	"github.com/kranix-io/kranix-core/internal/circuitbreaker"
 	"github.com/kranix-io/kranix-core/internal/cronsched"
 	"github.com/kranix-io/kranix-core/internal/drift"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
@@ -16,6 +17,7 @@ import (
 	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/state"
+	"github.com/kranix-io/kranix-core/internal/warmstandby"
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
 
@@ -27,9 +29,11 @@ type Config struct {
 
 // Deps holds optional collaborators for validation, quota gates, and cron scheduling.
 type Deps struct {
-	Policy *policy.Engine
-	Quota  *resourcequota.Engine
-	Cron   *cronsched.Evaluator // when nil, no cron gating (continuous scheduling)
+	Policy  *policy.Engine
+	Quota   *resourcequota.Engine
+	Cron    *cronsched.Evaluator // when nil, no cron gating (continuous scheduling)
+	Circuit *circuitbreaker.Engine
+	Standby *warmstandby.Manager
 }
 
 // Engine manages the main reconciliation loop.
@@ -148,6 +152,37 @@ func (e *Engine) reconcileOne(ctx context.Context, workload *types.Workload) err
 		}
 	}
 
+	now := time.Now()
+	if e.deps.Circuit != nil {
+		prev, cur := e.deps.Circuit.SyncFromWorkload(workload, now)
+		if err := e.store.Update(ctx, workload); err != nil {
+			log.Printf("Failed to persist circuit status for %s: %v", workload.ID, err)
+		}
+		if prev != cur && cur == types.CircuitStateOpen {
+			e.eventBus.PublishAsync(types.Event{Type: types.WorkloadCircuitOpen, Workload: workload})
+		}
+		if prev != cur && cur == types.CircuitStateClosed {
+			e.eventBus.PublishAsync(types.Event{Type: types.WorkloadCircuitClosed, Workload: workload})
+		}
+		if e.deps.Standby != nil && e.deps.Standby.ShouldAutoPromote(workload, now) {
+			if sw, err := e.deps.Standby.Promote(ctx, e.store, workload); err != nil {
+				log.Printf("Warm standby promote failed for %s: %v", workload.ID, err)
+			} else if sw != nil {
+				e.eventBus.PublishAsync(types.Event{Type: types.WorkloadStandbyPromoted, Workload: workload})
+				if err := e.scheduler.Schedule(ctx, sw); err != nil {
+					log.Printf("Failed to schedule promoted standby %s: %v", sw.ID, err)
+				}
+			}
+		}
+	}
+
+	if e.deps.Standby != nil && e.deps.Standby.EnabledFor(workload) &&
+		workload.Status.Phase == types.WorkloadPhaseRunning {
+		if err := e.deps.Standby.EnsureColdStandby(ctx, e.store, workload); err != nil {
+			log.Printf("Ensure cold standby failed for %s: %v", workload.ID, err)
+		}
+	}
+
 	cronTriggers := false
 	evaluator := e.deps.Cron
 	if evaluator == nil {
@@ -190,6 +225,14 @@ func (e *Engine) reconcileOne(ctx context.Context, workload *types.Workload) err
 			Workload: workload,
 		})
 		return nil
+	}
+
+	if e.deps.Circuit != nil && !e.deps.Circuit.AllowRoute(workload, now) {
+		log.Printf("Circuit breaker open: skipping route for workload %s", workload.ID)
+		return nil
+	}
+	if e.deps.Circuit != nil {
+		e.deps.Circuit.RecordRouteAttempt(workload)
 	}
 
 	// Execute rollout strategy if needed

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kranix-io/kranix-core/internal/autoscaler"
+	"github.com/kranix-io/kranix-core/internal/circuitbreaker"
 	"github.com/kranix-io/kranix-core/internal/drift"
 	"github.com/kranix-io/kranix-core/internal/eventbus"
 	"github.com/kranix-io/kranix-core/internal/eventsourcing"
@@ -22,6 +23,7 @@ import (
 	"github.com/kranix-io/kranix-core/internal/rollout"
 	"github.com/kranix-io/kranix-core/internal/scheduler"
 	"github.com/kranix-io/kranix-core/internal/state"
+	"github.com/kranix-io/kranix-core/internal/warmstandby"
 	"github.com/kranix-io/kranix-core/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -72,6 +74,18 @@ type Config struct {
 		RequireEnvironment bool `yaml:"require_environment"`
 		RequireCostCenter  bool `yaml:"require_cost_center"`
 	} `yaml:"workload_tags"`
+	CircuitBreaker struct {
+		Enabled                    bool  `yaml:"enabled"`
+		DefaultFailureThreshold    int32 `yaml:"default_failure_threshold"`
+		DefaultSuccessThreshold    int32 `yaml:"default_success_threshold"`
+		DefaultOpenDurationSeconds int32 `yaml:"default_open_duration_seconds"`
+		DefaultHalfOpenMaxRequests int32 `yaml:"default_half_open_max_requests"`
+	} `yaml:"circuit_breaker"`
+	WarmStandby struct {
+		Enabled                bool  `yaml:"enabled"`
+		DefaultStandbyReplicas int32 `yaml:"default_standby_replicas"`
+		DefaultAutoPromote     bool  `yaml:"default_auto_promote"`
+	} `yaml:"warm_standby"`
 }
 
 func main() {
@@ -162,6 +176,19 @@ func main() {
 	}
 	cronEval := &cronsched.Evaluator{}
 
+	circuitEngine := circuitbreaker.New(circuitbreaker.Config{
+		Enabled:                    config.CircuitBreaker.Enabled,
+		DefaultFailureThreshold:    config.CircuitBreaker.DefaultFailureThreshold,
+		DefaultSuccessThreshold:    config.CircuitBreaker.DefaultSuccessThreshold,
+		DefaultOpenDurationSeconds: config.CircuitBreaker.DefaultOpenDurationSeconds,
+		DefaultHalfOpenMaxRequests: config.CircuitBreaker.DefaultHalfOpenMaxRequests,
+	})
+	standbyManager := warmstandby.New(warmstandby.Config{
+		Enabled:                config.WarmStandby.Enabled,
+		DefaultStandbyReplicas: config.WarmStandby.DefaultStandbyReplicas,
+		DefaultAutoPromote:     config.WarmStandby.DefaultAutoPromote,
+	}, circuitEngine)
+
 	// Initialize drift detector
 	var driftDetector *drift.Detector
 	if config.DriftDetection.Enabled {
@@ -191,9 +218,11 @@ func main() {
 		autoscalerEngine,
 		driftDetector,
 		reconciler.Deps{
-			Policy: policyEngine,
-			Quota:  quotaEngine,
-			Cron:   cronEval,
+			Policy:  policyEngine,
+			Quota:   quotaEngine,
+			Cron:    cronEval,
+			Circuit: circuitEngine,
+			Standby: standbyManager,
 		},
 	)
 

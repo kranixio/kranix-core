@@ -68,6 +68,10 @@ Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_
 
 **Workload tags:** Structured **`tags`** (**`team`**, **`environment`**, **`cost_center`**, optional **`custom`**) are mirrored to labels **`kranix.io/team`**, **`kranix.io/environment`**, **`kranix.io/cost-center`** for filtering, billing exports, and team quotas. Optional policy flags under **`workload_tags`** require tags at admission.
 
+**Circuit breaker:** **`spec.circuit_breaker`** (or global **`circuit_breaker.enabled`**) tracks per-workload state in **`status.circuit_breaker`** (`closed` → `open` → `half-open`). While **open**, the reconciler skips scheduling/routing and emits **`WorkloadCircuitOpen`**; recovery emits **`WorkloadCircuitClosed`**. Dependency resolution treats peers with an open circuit as unsatisfied.
+
+**Warm standby:** **`spec.warm_standby`** provisions a linked cold workload (`{id}-standby`, **0 replicas**) labeled **`kranix.io/role=standby`**. **`auto_promote`** (or **`warm_standby.default_auto_promote`**) scales the standby when the primary circuit opens, emitting **`WorkloadStandbyPromoted`**. Configure via **`warm_standby`** in [`config/local.yaml`](./config/local.yaml).
+
 ### Event bus
 
 Internal components communicate via a typed event bus. Events flow:
