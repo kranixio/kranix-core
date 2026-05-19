@@ -64,6 +64,10 @@ Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_
 
 **Cross-namespace traffic:** **`spec.cross_namespace_traffic`** records which peer namespaces may exchange traffic when the runtime applies **NetworkPolicy** (ingress/egress allow lists, DNS, optional internet egress).
 
+**Rollback history:** With **`rollback_history.enabled`**, a **`VersionedStore`** retains the last **`max_versions`** snapshots of each workload’s spec (and tags) in **`rollback_versions`** (newest first). Use **`rollouthistory.Revert`** / **`rollouthistory.ListRevisions`** for instant revert; emits **`WorkloadRolledBack`** on revert.
+
+**Workload tags:** Structured **`tags`** (**`team`**, **`environment`**, **`cost_center`**, optional **`custom`**) are mirrored to labels **`kranix.io/team`**, **`kranix.io/environment`**, **`kranix.io/cost-center`** for filtering, billing exports, and team quotas. Optional policy flags under **`workload_tags`** require tags at admission.
+
 ### Event bus
 
 Internal components communicate via a typed event bus. Events flow:

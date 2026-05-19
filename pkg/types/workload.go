@@ -12,14 +12,19 @@ type Workload struct {
 	Name      string            `json:"name"`
 	Namespace string            `json:"namespace"`
 	Labels    map[string]string `json:"labels,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	// Tags are structured team / environment / cost-center tags (also written to Labels).
+	Tags      *WorkloadTags `json:"tags,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 
 	// Spec - desired configuration
 	Spec WorkloadSpec `json:"spec"`
 
 	// Status - current observed state
 	Status WorkloadStatus `json:"status"`
+
+	// RollbackVersions holds the last N spec snapshots for instant revert (newest first).
+	RollbackVersions []WorkloadRevision `json:"rollback_versions,omitempty"`
 
 	// History - immutable log of state transitions
 	History []WorkloadStateTransition `json:"history,omitempty"`
@@ -111,6 +116,7 @@ type WorkloadStatus struct {
 	Message           string               `json:"message,omitempty"`
 	LastTransition    time.Time            `json:"last_transition"`
 	Cron              *CronScheduleStatus  `json:"cron,omitempty"`
+	Rollback          *RollbackHistoryStatus `json:"rollback,omitempty"`
 }
 
 // CronScheduleSpec defines optional periodic execution (standard 5-field cron, e.g. "0 * * * *").

@@ -52,12 +52,18 @@ func ParseMemory(s string) (core.Quantity, error) {
 
 const teamLabelKey = "kranix.io/team"
 
-// TeamLabel returns workload team label value if set.
+// TeamLabel returns workload team from structured tags or kranix.io/team label.
 func TeamLabel(w *types.Workload) string {
-	if w == nil || w.Labels == nil {
+	if w == nil {
 		return ""
 	}
-	return strings.TrimSpace(w.Labels[teamLabelKey])
+	if w.Tags != nil && strings.TrimSpace(w.Tags.Team) != "" {
+		return strings.TrimSpace(w.Tags.Team)
+	}
+	if w.Labels != nil {
+		return strings.TrimSpace(w.Labels[teamLabelKey])
+	}
+	return ""
 }
 
 // TrimLower normalizes map keys and ids.

@@ -51,6 +51,15 @@ multitenancy:
   default_isolation: true
 
 # Hard aggregate limits per kubernetes namespace OR team (label kranix.io/team or tenant id).
+rollback_history:
+  enabled: true
+  max_versions: 10
+
+workload_tags:
+  require_team: false
+  require_environment: false
+  require_cost_center: false
+
 resource_quota:
   hard_limits:
     # - namespace: team-a-ns

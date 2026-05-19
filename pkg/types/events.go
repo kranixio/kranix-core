@@ -16,6 +16,8 @@ const (
 	WorkloadFailed EventType = "WorkloadFailed"
 	// WorkloadUpdated is emitted when a workload spec is updated
 	WorkloadUpdated EventType = "WorkloadUpdated"
+	// WorkloadRolledBack is emitted when a workload spec is reverted to a prior revision
+	WorkloadRolledBack EventType = "WorkloadRolledBack"
 	// WorkloadDeleted is emitted when a workload is deleted
 	WorkloadDeleted EventType = "WorkloadDeleted"
 	// WorkloadScaled is emitted when auto-scaling changes replica count

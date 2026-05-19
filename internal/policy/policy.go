@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kranix-io/kranix-core/internal/cronsched"
+	"github.com/kranix-io/kranix-core/internal/workloadtags"
 	"github.com/kranix-io/kranix-core/pkg/types"
 )
 
@@ -26,6 +27,9 @@ type Config struct {
 	DefaultCPULimit           string
 	DefaultMemoryLimit        string
 	EnforceNamespaceIsolation bool
+	RequireTeamTag            bool
+	RequireEnvironmentTag     bool
+	RequireCostCenterTag      bool
 }
 
 // New creates a new policy engine with the given configuration.
@@ -63,6 +67,35 @@ func (e *Engine) Validate(workload *types.Workload) error {
 		}
 	}
 
+	workloadtags.SyncFromLabels(workload)
+	if e.config.RequireTeamTag && workloadtags.Team(workload) == "" {
+		return fmt.Errorf("tags.team (or label %s) is required", types.LabelKeyTeam)
+	}
+	if e.config.RequireEnvironmentTag {
+		env := ""
+		if workload.Tags != nil {
+			env = workload.Tags.Environment
+		}
+		if env == "" && workload.Labels != nil {
+			env = workload.Labels[types.LabelKeyEnvironment]
+		}
+		if strings.TrimSpace(env) == "" {
+			return fmt.Errorf("tags.environment (or label %s) is required", types.LabelKeyEnvironment)
+		}
+	}
+	if e.config.RequireCostCenterTag {
+		cc := ""
+		if workload.Tags != nil {
+			cc = workload.Tags.CostCenter
+		}
+		if cc == "" && workload.Labels != nil {
+			cc = workload.Labels[types.LabelKeyCostCenter]
+		}
+		if strings.TrimSpace(cc) == "" {
+			return fmt.Errorf("tags.cost_center (or label %s) is required", types.LabelKeyCostCenter)
+		}
+	}
+
 	return nil
 }
 
@@ -76,5 +109,6 @@ func (e *Engine) Enforce(workload *types.Workload) (*types.Workload, error) {
 		workload.Spec.Resources.MemoryLimit = e.config.DefaultMemoryLimit
 	}
 
+	workloadtags.Apply(workload)
 	return workload, nil
 }

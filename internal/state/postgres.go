@@ -59,6 +59,8 @@ func createTables(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_workloads_namespace ON workloads(namespace)`,
 		`CREATE INDEX IF NOT EXISTS idx_workloads_labels ON workloads USING GIN(labels)`,
+		`ALTER TABLE workloads ADD COLUMN IF NOT EXISTS rollback_versions JSONB`,
+		`ALTER TABLE workloads ADD COLUMN IF NOT EXISTS tags JSONB`,
 	}
 
 	for _, query := range queries {
@@ -76,9 +78,9 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (*types.Workload, er
 	defer s.mu.RUnlock()
 
 	var workload types.Workload
-	var labelsJSON, historyJSON, tenantJSON []byte
+	var labelsJSON, historyJSON, tenantJSON, rollbackJSON, tagsJSON []byte
 
-	query := `SELECT id, name, namespace, labels, spec, status, history, tenant, created_at, updated_at 
+	query := `SELECT id, name, namespace, labels, spec, status, history, tenant, rollback_versions, tags, created_at, updated_at 
 			  FROM workloads WHERE id = $1`
 
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
@@ -90,6 +92,8 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (*types.Workload, er
 		&workload.Status,
 		&historyJSON,
 		&tenantJSON,
+		&rollbackJSON,
+		&tagsJSON,
 		&workload.CreatedAt,
 		&workload.UpdatedAt,
 	)
@@ -118,6 +122,16 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (*types.Workload, er
 			return nil, fmt.Errorf("failed to unmarshal tenant: %w", err)
 		}
 	}
+	if len(rollbackJSON) > 0 {
+		if err := json.Unmarshal(rollbackJSON, &workload.RollbackVersions); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal rollback_versions: %w", err)
+		}
+	}
+	if len(tagsJSON) > 0 {
+		if err := json.Unmarshal(tagsJSON, &workload.Tags); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tags: %w", err)
+		}
+	}
 
 	return &workload, nil
 }
@@ -131,11 +145,11 @@ func (s *PostgresStore) List(ctx context.Context, namespace string) ([]*types.Wo
 	var args []interface{}
 
 	if namespace != "" {
-		query = `SELECT id, name, namespace, labels, spec, status, history, tenant, created_at, updated_at 
+		query = `SELECT id, name, namespace, labels, spec, status, history, tenant, rollback_versions, tags, created_at, updated_at 
 				 FROM workloads WHERE namespace = $1 ORDER BY created_at DESC`
 		args = []interface{}{namespace}
 	} else {
-		query = `SELECT id, name, namespace, labels, spec, status, history, tenant, created_at, updated_at 
+		query = `SELECT id, name, namespace, labels, spec, status, history, tenant, rollback_versions, tags, created_at, updated_at 
 				 FROM workloads ORDER BY created_at DESC`
 	}
 
@@ -149,7 +163,7 @@ func (s *PostgresStore) List(ctx context.Context, namespace string) ([]*types.Wo
 
 	for rows.Next() {
 		var workload types.Workload
-		var labelsJSON, historyJSON, tenantJSON []byte
+		var labelsJSON, historyJSON, tenantJSON, rollbackJSON, tagsJSON []byte
 
 		err := rows.Scan(
 			&workload.ID,
@@ -160,6 +174,8 @@ func (s *PostgresStore) List(ctx context.Context, namespace string) ([]*types.Wo
 			&workload.Status,
 			&historyJSON,
 			&tenantJSON,
+			&rollbackJSON,
+			&tagsJSON,
 			&workload.CreatedAt,
 			&workload.UpdatedAt,
 		)
@@ -183,6 +199,16 @@ func (s *PostgresStore) List(ctx context.Context, namespace string) ([]*types.Wo
 		if len(tenantJSON) > 0 {
 			if err := json.Unmarshal(tenantJSON, &workload.Tenant); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal tenant: %w", err)
+			}
+		}
+		if len(rollbackJSON) > 0 {
+			if err := json.Unmarshal(rollbackJSON, &workload.RollbackVersions); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal rollback_versions: %w", err)
+			}
+		}
+		if len(tagsJSON) > 0 {
+			if err := json.Unmarshal(tagsJSON, &workload.Tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %w", err)
 			}
 		}
 
@@ -212,8 +238,18 @@ func (s *PostgresStore) Create(ctx context.Context, workload *types.Workload) er
 		return fmt.Errorf("failed to marshal tenant: %w", err)
 	}
 
-	query := `INSERT INTO workloads (id, name, namespace, labels, spec, status, history, tenant, created_at, updated_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	rollbackJSON, err := json.Marshal(workload.RollbackVersions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal rollback_versions: %w", err)
+	}
+
+	tagsJSON, err := json.Marshal(workload.Tags)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tags: %w", err)
+	}
+
+	query := `INSERT INTO workloads (id, name, namespace, labels, spec, status, history, tenant, rollback_versions, tags, created_at, updated_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
 	_, err = s.db.ExecContext(ctx, query,
 		workload.ID,
@@ -224,6 +260,8 @@ func (s *PostgresStore) Create(ctx context.Context, workload *types.Workload) er
 		workload.Status,
 		historyJSON,
 		tenantJSON,
+		rollbackJSON,
+		tagsJSON,
 		workload.CreatedAt,
 		workload.UpdatedAt,
 	)
@@ -260,9 +298,19 @@ func (s *PostgresStore) Update(ctx context.Context, workload *types.Workload) er
 		return fmt.Errorf("failed to marshal tenant: %w", err)
 	}
 
+	rollbackJSON, err := json.Marshal(workload.RollbackVersions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal rollback_versions: %w", err)
+	}
+
+	tagsJSON, err := json.Marshal(workload.Tags)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tags: %w", err)
+	}
+
 	query := `UPDATE workloads 
 			  SET name = $2, namespace = $3, labels = $4, spec = $5, status = $6, 
-			      history = $7, tenant = $8, updated_at = $9
+			      history = $7, tenant = $8, rollback_versions = $9, tags = $10, updated_at = $11
 			  WHERE id = $1`
 
 	result, err := s.db.ExecContext(ctx, query,
@@ -274,6 +322,8 @@ func (s *PostgresStore) Update(ctx context.Context, workload *types.Workload) er
 		workload.Status,
 		historyJSON,
 		tenantJSON,
+		rollbackJSON,
+		tagsJSON,
 		workload.UpdatedAt,
 	)
 

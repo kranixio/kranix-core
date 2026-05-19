@@ -63,6 +63,15 @@ type Config struct {
 	ResourceQuota struct {
 		HardLimits []types.HardResourceQuota `yaml:"hard_limits"`
 	} `yaml:"resource_quota"`
+	RollbackHistory struct {
+		Enabled     bool `yaml:"enabled"`
+		MaxVersions int  `yaml:"max_versions"`
+	} `yaml:"rollback_history"`
+	WorkloadTags struct {
+		RequireTeam        bool `yaml:"require_team"`
+		RequireEnvironment bool `yaml:"require_environment"`
+		RequireCostCenter  bool `yaml:"require_cost_center"`
+	} `yaml:"workload_tags"`
 }
 
 func main() {
@@ -112,6 +121,14 @@ func main() {
 		store = state.NewMemoryStore(eventStore)
 	}
 
+	if config.RollbackHistory.Enabled {
+		maxV := config.RollbackHistory.MaxVersions
+		if maxV <= 0 {
+			maxV = 10
+		}
+		store = state.NewVersionedStore(store, maxV)
+	}
+
 	// Initialize health gate engine
 	healthGateEngine := healthgate.New(healthgate.Config{
 		Enabled:        config.HealthGate.Enabled,
@@ -135,6 +152,9 @@ func main() {
 		DefaultCPULimit:           config.Policy.DefaultCPULimit,
 		DefaultMemoryLimit:        config.Policy.DefaultMemoryLimit,
 		EnforceNamespaceIsolation: config.Policy.EnforceNamespaceIsolation,
+		RequireTeamTag:            config.WorkloadTags.RequireTeam,
+		RequireEnvironmentTag:     config.WorkloadTags.RequireEnvironment,
+		RequireCostCenterTag:      config.WorkloadTags.RequireCostCenter,
 	})
 	var quotaEngine *resourcequota.Engine
 	if len(config.ResourceQuota.HardLimits) > 0 {
