@@ -51,6 +51,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/quotas/{namespace}", s.handleDeleteQuota)
 	mux.HandleFunc("DELETE /api/v1/workloads/{id}", s.handleDeleteWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.handleRestartWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/revisions", s.handleListRevisions)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/rollback", s.handleRollbackWorkload)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/events", s.handleWorkloadEvents)
 	mux.HandleFunc("GET /api/v1/events/{id}", s.handleGetEvent)
 	mux.HandleFunc("GET /api/v1/audit/resources/{type}/{id}", s.handleAuditResource)
