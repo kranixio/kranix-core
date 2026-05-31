@@ -33,6 +33,7 @@ type Server struct {
 	nodeOps    pkgtypes.NodeOperations
 	runtimeOps     pkgtypes.RuntimeExtendedOperations
 	runtimePlugins RuntimePluginLister
+	runtimeMigration pkgtypes.RuntimeMigrationOperations
 }
 
 // RuntimePluginLister returns registered runtime backend plugins.
@@ -56,6 +57,11 @@ func (s *Server) SetRuntimeOperations(ops pkgtypes.RuntimeExtendedOperations) {
 // SetRuntimePluginLister provides runtime plugin metadata for listing.
 func (s *Server) SetRuntimePluginLister(lister RuntimePluginLister) {
 	s.runtimePlugins = lister
+}
+
+// SetRuntimeMigration wires cross-backend workload migration APIs.
+func (s *Server) SetRuntimeMigration(ops pkgtypes.RuntimeMigrationOperations) {
+	s.runtimeMigration = ops
 }
 
 // RegisterRoutes registers core REST handlers.
@@ -85,6 +91,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restore", s.handleRestoreWorkload)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/checkpoints", s.handleListCheckpoints)
 	mux.HandleFunc("GET /api/v1/runtime/plugins", s.handleListRuntimePlugins)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/migrate", s.handleMigrateWorkload)
 }
 
 // ListenAndServe starts the HTTP server.

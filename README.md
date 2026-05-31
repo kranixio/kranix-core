@@ -70,6 +70,8 @@ Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_
 
 **Volumes & bandwidth on deploy:** **`spec.volumes`** and **`spec.networkBandwidth`** on workload specs are passed through to **`kranix-runtime`** during reconcile (PVC creation, pod annotations, Docker volume binds).
 
+**Migration, probes & placement:** **`POST /api/v1/workloads/{id}/migrate`** delegates to **`RuntimeMigrationOperations`** when wired via **`Server.SetRuntimeMigration`**. **`spec.probes`** and **`spec.scheduling.nodePlacement`** are passed through to runtime on deploy.
+
 **Cross-namespace traffic:** **`spec.cross_namespace_traffic`** records which peer namespaces may exchange traffic when the runtime applies **NetworkPolicy** (ingress/egress allow lists, DNS, optional internet egress).
 
 **Rollback history:** With **`rollback_history.enabled`**, a **`VersionedStore`** retains the last **`max_versions`** snapshots of each workload’s spec (and tags) in **`rollback_versions`** (newest first). Use **`rollouthistory.Revert`** / **`rollouthistory.ListRevisions`** for instant revert; emits **`WorkloadRolledBack`** on revert.
