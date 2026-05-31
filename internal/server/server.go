@@ -31,7 +31,12 @@ type Server struct {
 	secrets    *secretrotation.Engine
 	quota      *resourcequota.Engine
 	nodeOps    pkgtypes.NodeOperations
+	runtimeOps     pkgtypes.RuntimeExtendedOperations
+	runtimePlugins RuntimePluginLister
 }
+
+// RuntimePluginLister returns registered runtime backend plugins.
+type RuntimePluginLister func() []pkgtypes.RuntimePluginInfo
 
 // New creates an HTTP API server.
 func New(store state.Store, eventStore *eventsourcing.Store, sched *scheduler.Scheduler, secrets *secretrotation.Engine, quota *resourcequota.Engine) *Server {
@@ -41,6 +46,16 @@ func New(store state.Store, eventStore *eventsourcing.Store, sched *scheduler.Sc
 // SetNodeOperations wires runtime node lifecycle APIs (health scoring, drain).
 func (s *Server) SetNodeOperations(ops pkgtypes.NodeOperations) {
 	s.nodeOps = ops
+}
+
+// SetRuntimeOperations wires checkpoint, volume, and bandwidth runtime APIs.
+func (s *Server) SetRuntimeOperations(ops pkgtypes.RuntimeExtendedOperations) {
+	s.runtimeOps = ops
+}
+
+// SetRuntimePluginLister provides runtime plugin metadata for listing.
+func (s *Server) SetRuntimePluginLister(lister RuntimePluginLister) {
+	s.runtimePlugins = lister
 }
 
 // RegisterRoutes registers core REST handlers.
@@ -66,6 +81,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/secrets/rotated", s.handleSecretRotated)
 	mux.HandleFunc("GET /api/v1/nodes/health", s.handleListNodeHealth)
 	mux.HandleFunc("POST /api/v1/nodes/{name}/drain", s.handleDrainNode)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/checkpoint", s.handleCheckpointWorkload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/restore", s.handleRestoreWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/checkpoints", s.handleListCheckpoints)
+	mux.HandleFunc("GET /api/v1/runtime/plugins", s.handleListRuntimePlugins)
 }
 
 // ListenAndServe starts the HTTP server.

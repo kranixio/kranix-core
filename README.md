@@ -66,6 +66,10 @@ Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_
 
 **Node health & drain API:** **`GET /api/v1/nodes/health`** returns per-node scores (0–100). **`POST /api/v1/nodes/{name}/drain`** delegates to runtime **`NodeOperations`** when wired via **`Server.SetNodeOperations`**.
 
+**Checkpoint, restore & runtime plugins:** **`POST /api/v1/workloads/{id}/checkpoint`**, **`POST /api/v1/workloads/{id}/restore`**, and **`GET /api/v1/workloads/{id}/checkpoints`** delegate to runtime **`RuntimeExtendedOperations`** when wired via **`Server.SetRuntimeOperations`**. **`GET /api/v1/runtime/plugins`** lists backend plugins when **`Server.SetRuntimePluginLister`** is configured.
+
+**Volumes & bandwidth on deploy:** **`spec.volumes`** and **`spec.networkBandwidth`** on workload specs are passed through to **`kranix-runtime`** during reconcile (PVC creation, pod annotations, Docker volume binds).
+
 **Cross-namespace traffic:** **`spec.cross_namespace_traffic`** records which peer namespaces may exchange traffic when the runtime applies **NetworkPolicy** (ingress/egress allow lists, DNS, optional internet egress).
 
 **Rollback history:** With **`rollback_history.enabled`**, a **`VersionedStore`** retains the last **`max_versions`** snapshots of each workload’s spec (and tags) in **`rollback_versions`** (newest first). Use **`rollouthistory.Revert`** / **`rollouthistory.ListRevisions`** for instant revert; emits **`WorkloadRolledBack`** on revert.
