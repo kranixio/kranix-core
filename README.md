@@ -62,6 +62,10 @@ Core can enforce **hard aggregate quotas** over workloads in scope: **`resource_
 
 **Spot / preemptible:** **`spec.scheduling.spot`** (**`enabled`**, **`reschedule_on_node_termination`**) is passed through for the Kubernetes backend to merge spot **tolerations** and tighter eviction behavior.
 
+**Multi-arch & drain-aware scheduling:** **`spec.scheduling.architecture`** (`amd64` | `arm64`) and **`avoid_draining_nodes`** filter the node registry before cost-aware placement. Runtime applies **`kubernetes.io/arch`** node selection on deploy.
+
+**Node health & drain API:** **`GET /api/v1/nodes/health`** returns per-node scores (0–100). **`POST /api/v1/nodes/{name}/drain`** delegates to runtime **`NodeOperations`** when wired via **`Server.SetNodeOperations`**.
+
 **Cross-namespace traffic:** **`spec.cross_namespace_traffic`** records which peer namespaces may exchange traffic when the runtime applies **NetworkPolicy** (ingress/egress allow lists, DNS, optional internet egress).
 
 **Rollback history:** With **`rollback_history.enabled`**, a **`VersionedStore`** retains the last **`max_versions`** snapshots of each workload’s spec (and tags) in **`rollback_versions`** (newest first). Use **`rollouthistory.Revert`** / **`rollouthistory.ListRevisions`** for instant revert; emits **`WorkloadRolledBack`** on revert.

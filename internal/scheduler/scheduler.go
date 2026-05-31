@@ -31,13 +31,17 @@ type NodeRegistry interface {
 
 // NodeInfo contains information about a node.
 type NodeInfo struct {
-	ID       string
-	Region   string
-	Zone     string
-	CPU      int64
-	Memory   int64
-	Labels   map[string]string
-	Capacity ResourceCapacity
+	ID            string
+	Region        string
+	Zone          string
+	CPU           int64
+	Memory        int64
+	Labels        map[string]string
+	Capacity      ResourceCapacity
+	HealthScore   int
+	Architecture  string
+	Draining      bool
+	Unschedulable bool
 }
 
 // ResourceCapacity represents node resource capacity.
@@ -144,6 +148,21 @@ func (s *Scheduler) filterNodes(nodes []NodeInfo, scheduling *types.SchedulingCo
 			}
 		}
 
+		if scheduling.AvoidDrainingNodes && node.Draining {
+			continue
+		}
+
+		if scheduling.Architecture != "" {
+			if node.Architecture != "" && node.Architecture != normalizeArch(scheduling.Architecture) {
+				continue
+			}
+			if node.Labels != nil {
+				if arch := node.Labels["kubernetes.io/arch"]; arch != "" && arch != normalizeArch(scheduling.Architecture) {
+					continue
+				}
+			}
+		}
+
 		filtered = append(filtered, node)
 	}
 
@@ -195,6 +214,14 @@ func (s *Scheduler) GetDriver(name string) (types.RuntimeDriver, bool) {
 	return driver, exists
 }
 
+// ListNodes returns nodes from the configured registry.
+func (s *Scheduler) ListNodes(ctx context.Context) ([]NodeInfo, error) {
+	if s.nodeRegistry == nil {
+		return nil, nil
+	}
+	return s.nodeRegistry.ListNodes(ctx)
+}
+
 // DefaultCostProvider provides a default implementation of CostProvider.
 type DefaultCostProvider struct{}
 
@@ -238,28 +265,39 @@ func (r *DefaultNodeRegistry) ListNodes(ctx context.Context) ([]NodeInfo, error)
 	// For now, return mock nodes
 	return []NodeInfo{
 		{
-			ID:     "node-1",
-			Region: "us-east-1",
-			Zone:   "us-east-1a",
-			CPU:    4000,
-			Memory: 16384,
-			Labels: map[string]string{},
-			Capacity: ResourceCapacity{
-				CPU:    4000,
-				Memory: 16384,
-			},
+			ID:            "node-amd64-1",
+			Region:        "us-east-1",
+			Zone:          "us-east-1a",
+			CPU:           4000,
+			Memory:        16384,
+			HealthScore:   95,
+			Architecture:  "amd64",
+			Labels:        map[string]string{"kubernetes.io/arch": "amd64"},
+			Capacity:      ResourceCapacity{CPU: 4000, Memory: 16384},
 		},
 		{
-			ID:     "node-2",
-			Region: "us-west-2",
-			Zone:   "us-west-2a",
-			CPU:    4000,
-			Memory: 16384,
-			Labels: map[string]string{},
-			Capacity: ResourceCapacity{
-				CPU:    4000,
-				Memory: 16384,
-			},
+			ID:            "node-arm64-1",
+			Region:        "us-east-1",
+			Zone:          "us-east-1b",
+			CPU:           4000,
+			Memory:        16384,
+			HealthScore:   88,
+			Architecture:  "arm64",
+			Labels:        map[string]string{"kubernetes.io/arch": "arm64"},
+			Capacity:      ResourceCapacity{CPU: 4000, Memory: 16384},
+		},
+		{
+			ID:            "node-amd64-2",
+			Region:        "us-west-2",
+			Zone:          "us-west-2a",
+			CPU:           4000,
+			Memory:        16384,
+			HealthScore:   72,
+			Architecture:  "amd64",
+			Draining:      true,
+			Unschedulable: true,
+			Labels:        map[string]string{"kubernetes.io/arch": "amd64", "kranix.io/drain": "true"},
+			Capacity:      ResourceCapacity{CPU: 4000, Memory: 16384},
 		},
 	}, nil
 }
@@ -322,4 +360,15 @@ func parseCost(costStr string) (float64, error) {
 	var cost float64
 	_, err := fmt.Sscanf(costStr, "%f", &cost)
 	return cost, err
+}
+
+func normalizeArch(arch string) string {
+	switch arch {
+	case "x86_64", "x64":
+		return "amd64"
+	case "aarch64":
+		return "arm64"
+	default:
+		return arch
+	}
 }

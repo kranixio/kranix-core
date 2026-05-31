@@ -19,6 +19,7 @@ import (
 	"github.com/kranix-io/kranix-core/internal/workloadfilter"
 	"github.com/kranix-io/kranix-core/internal/workloadpage"
 	"github.com/kranix-io/kranix-core/pkg/types"
+	pkgtypes "github.com/kranix-io/kranix-packages/types"
 	"github.com/kranix-io/kranix-packages/pagination"
 )
 
@@ -29,11 +30,17 @@ type Server struct {
 	sched      *scheduler.Scheduler
 	secrets    *secretrotation.Engine
 	quota      *resourcequota.Engine
+	nodeOps    pkgtypes.NodeOperations
 }
 
 // New creates an HTTP API server.
 func New(store state.Store, eventStore *eventsourcing.Store, sched *scheduler.Scheduler, secrets *secretrotation.Engine, quota *resourcequota.Engine) *Server {
 	return &Server{store: store, eventStore: eventStore, sched: sched, secrets: secrets, quota: quota}
+}
+
+// SetNodeOperations wires runtime node lifecycle APIs (health scoring, drain).
+func (s *Server) SetNodeOperations(ops pkgtypes.NodeOperations) {
+	s.nodeOps = ops
 }
 
 // RegisterRoutes registers core REST handlers.
@@ -57,6 +64,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/events/{id}", s.handleGetEvent)
 	mux.HandleFunc("GET /api/v1/audit/resources/{type}/{id}", s.handleAuditResource)
 	mux.HandleFunc("POST /api/v1/secrets/rotated", s.handleSecretRotated)
+	mux.HandleFunc("GET /api/v1/nodes/health", s.handleListNodeHealth)
+	mux.HandleFunc("POST /api/v1/nodes/{name}/drain", s.handleDrainNode)
 }
 
 // ListenAndServe starts the HTTP server.

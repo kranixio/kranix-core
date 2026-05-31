@@ -206,6 +206,10 @@ type SchedulingConfig struct {
 	PriorityClassName string `json:"priority_class_name,omitempty"`
 	// Spot configures spot / preemptible node placement behavior.
 	Spot *SpotWorkloadConfig `json:"spot,omitempty"`
+	// Architecture routes workloads to amd64 or arm64 nodes.
+	Architecture string `json:"architecture,omitempty"`
+	// AvoidDrainingNodes excludes nodes marked for maintenance.
+	AvoidDrainingNodes bool `json:"avoid_draining_nodes,omitempty"`
 }
 
 // WorkloadPriority values for WorkloadSchedulingRank and Kubernetes mappings.
